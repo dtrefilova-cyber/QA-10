@@ -1,5 +1,5 @@
 streamlit
-pandas
-requests
 openai
+deepgram-sdk
+pandas
 openpyxl
