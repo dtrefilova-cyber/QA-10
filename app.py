@@ -20,29 +20,53 @@ st.title("🎧 QA-10: Аналіз 10 дзвінків")
 check_date = st.date_input("Дата перевірки", datetime.today())
 
 # =========================
-# Форма для 10 дзвінків
+# Форма для 10 дзвінків (по 2 в рядку)
 # =========================
 calls = []
-for i in range(10):
-    with st.expander(f"📞 Дзвінок {i+1}", expanded=False):
-        audio_url = st.text_input(f"Посилання на аудіо {i+1}")
+for row in range(5):  # 5 рядків по 2 дзвінки = 10
+    col1, col2 = st.columns(2)
 
-        col1, col2, col3 = st.columns(3)
-        qa_manager = col1.text_input(f"QA менеджер {i+1}")
-        ret_manager = col2.text_input(f"Менеджер RET {i+1}")
-        client_id = col3.text_input(f"ID клієнта {i+1}")
-
-        col4, col5 = st.columns(2)
-        call_date = col4.text_input(f"Дата дзвінка {i+1} (ДД-ММ-РРРР)")
-        bonus_check = col5.selectbox(f"Бонус {i+1}", ["так", "ні", "не потрібно"])
-
-        repeat_call = st.selectbox(f"Повторний дзвінок {i+1}", [
+    # Дзвінок зліва
+    with col1.expander(f"📞 Дзвінок {row*2+1}", expanded=False):
+        audio_url = st.text_input(f"Посилання на аудіо {row*2+1}")
+        qa_manager = st.text_input(f"QA менеджер {row*2+1}")
+        ret_manager = st.text_input(f"Менеджер RET {row*2+1}")
+        client_id = st.text_input(f"ID клієнта {row*2+1}")
+        call_date = st.text_input(f"Дата дзвінка {row*2+1} (ДД-ММ-РРРР)")
+        bonus_check = st.selectbox(f"Бонус {row*2+1}", ["так", "ні", "не потрібно"])
+        repeat_call = st.selectbox(f"Повторний дзвінок {row*2+1}", [
             "так, був протягом години",
             "так, був протягом 3 годин",
             "ні, не було"
         ])
+        manager_comment = st.text_area(f"Коментар менеджера {row*2+1}", height=80)
 
-        manager_comment = st.text_area(f"Коментар менеджера {i+1}", height=80)
+        calls.append({
+            "url": audio_url,
+            "qa_manager": qa_manager,
+            "ret_manager": ret_manager,
+            "client_id": client_id,
+            "call_date": call_date,
+            "check_date": check_date.strftime("%d-%m-%Y"),
+            "bonus_check": bonus_check,
+            "repeat_call": repeat_call,
+            "manager_comment": manager_comment
+        })
+
+    # Дзвінок справа
+    with col2.expander(f"📞 Дзвінок {row*2+2}", expanded=False):
+        audio_url = st.text_input(f"Посилання на аудіо {row*2+2}")
+        qa_manager = st.text_input(f"QA менеджер {row*2+2}")
+        ret_manager = st.text_input(f"Менеджер RET {row*2+2}")
+        client_id = st.text_input(f"ID клієнта {row*2+2}")
+        call_date = st.text_input(f"Дата дзвінка {row*2+2} (ДД-ММ-РРРР)")
+        bonus_check = st.selectbox(f"Бонус {row*2+2}", ["так", "ні", "не потрібно"])
+        repeat_call = st.selectbox(f"Повторний дзвінок {row*2+2}", [
+            "так, був протягом години",
+            "так, був протягом 3 годин",
+            "ні, не було"
+        ])
+        manager_comment = st.text_area(f"Коментар менеджера {row*2+2}", height=80)
 
         calls.append({
             "url": audio_url,
