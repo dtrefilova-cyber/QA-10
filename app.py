@@ -24,31 +24,37 @@ check_date = st.date_input("Дата перевірки", datetime.today())
 # =========================
 calls = []
 for i in range(10):
-    st.subheader(f"Дзвінок {i+1}")
-    audio_url = st.text_input(f"Посилання на аудіо {i+1}")
-    qa_manager = st.text_input(f"QA менеджер {i+1}")
-    ret_manager = st.text_input(f"Менеджер RET {i+1}")
-    client_id = st.text_input(f"ID клієнта {i+1}")
-    call_date = st.text_input(f"Дата дзвінка {i+1} (ДД-ММ-РРРР)")
-    bonus_check = st.selectbox(f"Бонус {i+1}", ["так", "ні", "не потрібно"])
-    repeat_call = st.selectbox(f"Повторний дзвінок {i+1}", [
-        "так, був протягом години",
-        "так, був протягом 3 годин",
-        "ні, не було"
-    ])
-    manager_comment = st.text_area(f"Коментар менеджера {i+1}", height=80)
+    with st.expander(f"📞 Дзвінок {i+1}", expanded=False):
+        audio_url = st.text_input(f"Посилання на аудіо {i+1}")
 
-    calls.append({
-        "url": audio_url,
-        "qa_manager": qa_manager,
-        "ret_manager": ret_manager,
-        "client_id": client_id,
-        "call_date": call_date,
-        "check_date": check_date.strftime("%d-%m-%Y"),
-        "bonus_check": bonus_check,
-        "repeat_call": repeat_call,
-        "manager_comment": manager_comment
-    })
+        col1, col2, col3 = st.columns(3)
+        qa_manager = col1.text_input(f"QA менеджер {i+1}")
+        ret_manager = col2.text_input(f"Менеджер RET {i+1}")
+        client_id = col3.text_input(f"ID клієнта {i+1}")
+
+        col4, col5 = st.columns(2)
+        call_date = col4.text_input(f"Дата дзвінка {i+1} (ДД-ММ-РРРР)")
+        bonus_check = col5.selectbox(f"Бонус {i+1}", ["так", "ні", "не потрібно"])
+
+        repeat_call = st.selectbox(f"Повторний дзвінок {i+1}", [
+            "так, був протягом години",
+            "так, був протягом 3 годин",
+            "ні, не було"
+        ])
+
+        manager_comment = st.text_area(f"Коментар менеджера {i+1}", height=80)
+
+        calls.append({
+            "url": audio_url,
+            "qa_manager": qa_manager,
+            "ret_manager": ret_manager,
+            "client_id": client_id,
+            "call_date": call_date,
+            "check_date": check_date.strftime("%d-%m-%Y"),
+            "bonus_check": bonus_check,
+            "repeat_call": repeat_call,
+            "manager_comment": manager_comment
+        })
 
 # =========================
 # Обробка дзвінків
@@ -110,34 +116,37 @@ manager_comment = "{meta['manager_comment']}"
 if st.button("Запустити аналіз"):
     results = []
     for i, call in enumerate(calls):
+        if not call["url"]:
+            continue
         st.write(f"⏳ Обробка дзвінка {i+1}...")
         transcript = transcribe_audio(call["url"])
         analysis = analyze_call(transcript, call)
         results.append({"meta": call, "transcript": transcript, "analysis": analysis})
 
-        st.subheader(f"Результат дзвінка {i+1}")
-        st.write("📌 Дані:", call)
-        st.write("📝 Транскрипт:", transcript)
-        st.write("📊 Аналіз:", analysis)
+        with st.expander(f"📊 Результат дзвінка {i+1}", expanded=True):
+            st.write("📌 Дані:", call)
+            st.write("📝 Транскрипт:", transcript)
+            st.write("📊 Аналіз:", analysis)
 
     # =========================
     # Експорт у Excel
     # =========================
-    xls = BytesIO()
-    with pd.ExcelWriter(xls, engine="openpyxl") as writer:
-        for i, res in enumerate(results):
-            df = pd.DataFrame({
-                "Transcript": [res["transcript"]],
-                "Analysis": [res["analysis"]]
-            })
-            meta_df = pd.DataFrame(list(res["meta"].items()), columns=["Поле", "Значення"])
-            meta_df.to_excel(writer, index=False, sheet_name=f"Call_{i+1}", startrow=0)
-            df.to_excel(writer, index=False, sheet_name=f"Call_{i+1}", startrow=len(meta_df)+2)
-    xls.seek(0)
+    if results:
+        xls = BytesIO()
+        with pd.ExcelWriter(xls, engine="openpyxl") as writer:
+            for i, res in enumerate(results):
+                df = pd.DataFrame({
+                    "Transcript": [res["transcript"]],
+                    "Analysis": [res["analysis"]]
+                })
+                meta_df = pd.DataFrame(list(res["meta"].items()), columns=["Поле", "Значення"])
+                meta_df.to_excel(writer, index=False, sheet_name=f"Call_{i+1}", startrow=0)
+                df.to_excel(writer, index=False, sheet_name=f"Call_{i+1}", startrow=len(meta_df)+2)
+        xls.seek(0)
 
-    st.download_button(
-        "📥 Завантажити результати у XLSX",
-        xls,
-        "qa10_results.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        st.download_button(
+            "📥 Завантажити результати у XLSX",
+            xls,
+            "qa10_results.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
