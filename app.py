@@ -97,23 +97,43 @@ def analyze_call(final_dialogue, meta):
 Ти — експерт з контролю якості дзвінків у казино. 
 Оціни дзвінок менеджера за 14 критеріями КЛН.
 
-Формат відповіді (строго тільки JSON):
+⚠️ Важливо:
+- Відповідь має бути строго у форматі JSON, без пояснень і без тексту поза JSON.
+- Не залишай усі оцінки нулями. Якщо критерій виконано частково — вибери найближче значення з дозволених.
+- Використовуй тільки дозволені значення для кожного критерію:
+
+greeting: 0, 2.5, 5
+friendly_question: 0, 2.5, 5
+continue_conversation: 0, 2.5, 5
+presentation_attempt: 0, 5, 7.5, 10
+next_contact: 0, 5, 7.5, 10
+bonus_offer: 0, 5, 7.5, 10
+closing: 0, 2.5, 5
+callback: 0, 2.5, 5, 7.5, 10
+not_assume: 0, 5
+speech_quality: 0, 2.5, 5, 7.5, 10
+professionalism: 0, 5, 7.5, 10
+crm_card: 0, 2.5, 5, 7.5, 10
+objection_handling: 0, 5, 7.5, 10
+client_dumping: 0, 5, 7.5, 10, 15
+
+Формат відповіді:
 {{
-  "greeting": 0,
-  "friendly_question": 0,
-  "continue_conversation": 0,
-  "presentation_attempt": 0,
-  "next_contact": 0,
-  "bonus_offer": 0,
-  "closing": 0,
-  "callback": 0,
-  "not_assume": 0,
-  "speech_quality": 0,
-  "professionalism": 0,
-  "crm_card": 0,
-  "objection_handling": 0,
-  "client_dumping": 0,
-  "comment": "Коротке резюме дзвінка та поради для менеджера."
+  "greeting": <оцінка>,
+  "friendly_question": <оцінка>,
+  "continue_conversation": <оцінка>,
+  "presentation_attempt": <оцінка>,
+  "next_contact": <оцінка>,
+  "bonus_offer": <оцінка>,
+  "closing": <оцінка>,
+  "callback": <оцінка>,
+  "not_assume": <оцінка>,
+  "speech_quality": <оцінка>,
+  "professionalism": <оцінка>,
+  "crm_card": <оцінка>,
+  "objection_handling": <оцінка>,
+  "client_dumping": <оцінка>,
+  "comment": "Коротке резюме дзвінка та рекомендації"
 }}
 
 Дані:
@@ -127,8 +147,10 @@ manager_comment = "{meta['manager_comment']}"
 
     response = client.chat.completions.create(
         model="gpt-4.1",
-        messages=[{"role": "system", "content": "Ти експерт з контролю якості дзвінків казино."},
-                  {"role": "user", "content": prompt}],
+        messages=[
+            {"role": "system", "content": "Ти експерт з контролю якості дзвінків казино."},
+            {"role": "user", "content": prompt}
+        ],
         temperature=0
     )
     return response.choices[0].message.content
