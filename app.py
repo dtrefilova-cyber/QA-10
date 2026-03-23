@@ -33,7 +33,7 @@ for row in range(5):  # 5 рядків по 2 дзвінки = 10
         ret_manager = st.text_input(f"Менеджер RET {row*2+1}")
         client_id = st.text_input(f"ID клієнта {row*2+1}")
         call_date = st.text_input(f"Дата дзвінка {row*2+1} (ДД-ММ-РРРР)")
-        bonus_check = st.selectbox(f"Бонус {row*2+1}", ["так", "ні", "не потрібно"])
+        bonus_check = st.selectbox(f"Бонус {row*2+1}", ["правильно нараховано", "помилково нараховано", "не потрібно"])
         repeat_call = st.selectbox(f"Повторний дзвінок {row*2+1}", [
             "так, був протягом години",
             "так, був протягом 3 годин",
@@ -60,7 +60,7 @@ for row in range(5):  # 5 рядків по 2 дзвінки = 10
         ret_manager = st.text_input(f"Менеджер RET {row*2+2}")
         client_id = st.text_input(f"ID клієнта {row*2+2}")
         call_date = st.text_input(f"Дата дзвінка {row*2+2} (ДД-ММ-РРРР)")
-        bonus_check = st.selectbox(f"Бонус {row*2+2}", ["так", "ні", "не потрібно"])
+        bonus_check = st.selectbox(f"Бонус {row*2+2}", ["правильно нараховано", "помилково нараховано", "не потрібно"])
         repeat_call = st.selectbox(f"Повторний дзвінок {row*2+2}", [
             "так, був протягом години",
             "так, був протягом 3 годин",
