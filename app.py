@@ -48,11 +48,7 @@ for row in range(5):
 
             repeat_call = st.selectbox(
                 "Повторний дзвінок",
-                [
-                    "так, був протягом години",
-                    "так, був протягом 3 годин",
-                    "ні, не було"
-                ],
+                ["так, був протягом години","так, був протягом 3 годин","ні, не було"],
                 key=f"repeat_{idx}"
             )
 
@@ -75,9 +71,9 @@ for row in range(5):
             })
 
 
-# -----------------------------
+# -------------------------
 # TRANSCRIPTION
-# -----------------------------
+# -------------------------
 
 def transcribe_audio(audio_url):
 
@@ -124,21 +120,56 @@ def transcribe_audio(audio_url):
     return "\n".join(dialogue)
 
 
-# -----------------------------
+# -------------------------
+# SEGMENT EXTRACTION
+# -------------------------
+
+def extract_segments(dialogue):
+
+    lines = dialogue.split("\n")
+
+    intro = "\n".join(lines[:4])
+    middle = "\n".join(lines[4:-4])
+    ending = "\n".join(lines[-4:])
+
+    return intro, middle, ending
+
+
+# -------------------------
 # FEATURE EXTRACTION
-# -----------------------------
+# -------------------------
 
 def extract_features(dialogue):
+
+    intro, middle, ending = extract_segments(dialogue)
 
     prompt = f"""
 Проаналізуй дзвінок.
 
 ВАЖЛИВО:
-Бонус не є презентацією.
 
-Презентація = слоти, ігри, турніри або функції сайту.
+Бонус ≠ презентація.
 
-Поверни тільки JSON:
+Презентація = слоти, ігри, турніри або інфоприводи сайту.
+
+Заперечення — це негатив щодо гри, бонусів або сайту.
+
+Фрази:
+"мені незручно говорити"
+"немає часу"
+
+НЕ є запереченням.
+
+Початок:
+{intro}
+
+Середина:
+{middle}
+
+Кінець:
+{ending}
+
+Поверни JSON:
 
 {{
 "manager_introduced_self": true/false,
@@ -152,10 +183,6 @@ def extract_features(dialogue):
 "followup_agreement": true/false,
 "objection_detected": true/false
 }}
-
-Дзвінок:
-
-{dialogue}
 """
 
     response = client.chat.completions.create(
@@ -168,48 +195,39 @@ def extract_features(dialogue):
     )
 
     try:
-        return json.loads(response.choices[0].message.content)
+        features = json.loads(response.choices[0].message.content)
     except:
-        return {}
+        features = {}
+
+    defaults = {
+        "manager_introduced_self": False,
+        "client_name_used": False,
+        "presentation_detected": False,
+        "bonus_offered": False,
+        "bonus_conditions_count": 0,
+        "speech_quality_good": True,
+        "client_busy": False,
+        "manager_active": True,
+        "followup_agreement": False,
+        "objection_detected": False
+    }
+
+    for k,v in defaults.items():
+        features.setdefault(k,v)
+
+    return features
 
 
-# -----------------------------
-# GPT COMMENT
-# -----------------------------
-
-def generate_comment(dialogue):
-
-    prompt = f"""
-Коротко підсумуй дзвінок менеджера казино.
-
-1-3 речення.
-Вкажи сильні сторони та рекомендацію.
-
-{dialogue}
-"""
-
-    response = client.chat.completions.create(
-        model="gpt-4.1",
-        temperature=0.3,
-        messages=[
-            {"role":"system","content":"Ти QA-аналітик дзвінків."},
-            {"role":"user","content":prompt}
-        ]
-    )
-
-    return response.choices[0].message.content
-
-
-# -----------------------------
-# SCORING
-# -----------------------------
+# -------------------------
+# SCORING ENGINE
+# -------------------------
 
 def score_call(features, meta):
 
     scores = {}
 
-    introduced = features.get("manager_introduced_self")
-    client_name = features.get("client_name_used")
+    introduced = features["manager_introduced_self"]
+    client_name = features["client_name_used"]
 
     if introduced and client_name:
         scores["Привітання"] = 5
@@ -218,22 +236,17 @@ def score_call(features, meta):
     else:
         scores["Привітання"] = 0
 
-
     scores["Дружелюбне питання / Мета дзвінка"] = 2.5
 
+    scores["Спроба продовжити розмову"] = 5 if features["manager_active"] else 0
 
-    scores["Спроба продовжити розмову"] = 5 if features.get("manager_active") else 0
+    scores["Спроба презентації"] = 5 if features["presentation_detected"] else 0
 
+    scores["Домовленість про наступний контакт"] = 10 if features["followup_agreement"] else 0
 
-    scores["Спроба презентації"] = 5 if features.get("presentation_detected") else 0
+    bonus_conditions = features["bonus_conditions_count"]
 
-
-    scores["Домовленість про наступний контакт"] = 10 if features.get("followup_agreement") else 0
-
-
-    bonus_conditions = features.get("bonus_conditions_count",0)
-
-    if not features.get("bonus_offered"):
+    if not features["bonus_offered"]:
         scores["Пропозиція бонусу"] = 0
     elif bonus_conditions == 0:
         scores["Пропозиція бонусу"] = 5
@@ -242,9 +255,7 @@ def score_call(features, meta):
     else:
         scores["Пропозиція бонусу"] = 10
 
-
     scores["Завершення"] = 2.5
-
 
     repeat = meta["repeat_call"]
 
@@ -255,28 +266,21 @@ def score_call(features, meta):
     else:
         scores["Передзвон клієнту"] = 10
 
-
     scores["Не додумувати"] = 5
 
+    speech = features["speech_quality_good"]
 
-    scores["Якість мовлення"] = 2.5 if features.get("speech_quality_good") else 0
-
+    scores["Якість мовлення"] = 0 if speech is False else 2.5
 
     scores["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
 
-
     scores["CRM-картка"] = 5 if meta["manager_comment"] else 0
 
+    scores["Робота із запереченнями"] = 10 if not features["objection_detected"] else 5
 
-    if not features.get("objection_detected"):
-        scores["Робота із запереченнями"] = 10
-    else:
-        scores["Робота із запереченнями"] = 5
-
-
-    if features.get("client_busy"):
+    if features["client_busy"]:
         scores["Зливання клієнта"] = 15
-    elif features.get("manager_active"):
+    elif features["manager_active"]:
         scores["Зливання клієнта"] = 15
     else:
         scores["Зливання клієнта"] = 10
@@ -284,9 +288,17 @@ def score_call(features, meta):
     return scores
 
 
-# -----------------------------
+# -------------------------
+# FORMAT SCORE
+# -------------------------
+
+def format_score(x):
+    return round(float(x),1)
+
+
+# -------------------------
 # ANALYSIS
-# -----------------------------
+# -------------------------
 
 if "results" not in st.session_state:
     st.session_state["results"] = []
@@ -308,18 +320,15 @@ if st.button("Запустити аналіз"):
 
         scores = score_call(features, call)
 
-        comment = generate_comment(transcript)
-
         st.session_state["results"].append({
             "meta": call,
-            "scores": scores,
-            "comment": comment
+            "scores": scores
         })
 
 
-# -----------------------------
+# -------------------------
 # OUTPUT
-# -----------------------------
+# -------------------------
 
 for i, res in enumerate(st.session_state["results"]):
 
@@ -327,19 +336,18 @@ for i, res in enumerate(st.session_state["results"]):
 
         df = pd.DataFrame(res["scores"].items(), columns=["Критерій","Оцінка"])
 
+        df["Оцінка"] = df["Оцінка"].apply(format_score)
+
         st.table(df)
 
-        total_score = sum(res["scores"].values())
+        total_score = round(sum(res["scores"].values()),1)
 
         st.markdown(f"**Загальний бал:** {total_score}")
 
-        st.markdown("### Коментар")
-        st.write(res["comment"])
 
-
-# -----------------------------
+# -------------------------
 # EXPORT EXCEL
-# -----------------------------
+# -------------------------
 
 if st.session_state["results"]:
 
@@ -351,14 +359,11 @@ if st.session_state["results"]:
 
             sheet_name = f"Call_{i+1}"
 
-            meta_df = pd.DataFrame(list(res["meta"].items()), columns=["Поле","Значення"])
-            meta_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=0)
-
             scores_df = pd.DataFrame(res["scores"].items(), columns=["Критерій","Оцінка"])
-            scores_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=len(meta_df)+2)
 
-            comment_df = pd.DataFrame([["Коментар", res["comment"]]], columns=["Поле","Значення"])
-            comment_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=len(meta_df)+len(scores_df)+4)
+            scores_df["Оцінка"] = scores_df["Оцінка"].apply(format_score)
+
+            scores_df.to_excel(writer, index=False, sheet_name=sheet_name)
 
     xls.seek(0)
 
