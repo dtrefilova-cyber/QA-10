@@ -293,12 +293,13 @@ def score_call(features, meta):
 
     scores["Не додумувати"] = 5
 
-    speech = features.get("speech_quality_good", True)
+     speech = features.get("speech_quality_good", True)
 
-    if speech is False:
-        scores["Якість мовлення"] = 0
-    else:
-        scores["Якість мовлення"] = 2.5
+    # якщо GPT повернув рядок замість boolean
+    if isinstance(speech, str):
+    speech = speech.lower() in ["true", "yes", "1"]
+
+scores["Якість мовлення"] = 2.5 if speech else 0
 
     scores["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
 
