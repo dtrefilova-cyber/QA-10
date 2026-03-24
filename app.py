@@ -176,7 +176,7 @@ def transcribe_audio(audio_url):
     if not audio_url:
         return None
     url = "https://api.deepgram.com/v1/listen"
-    params = {"model":"nova-2","language":"uk","diarize":"true","utterances":"true","punctuate":"true","smart_format":"true"}
+    params = {"model":"general","language":"uk","diarize":"true","utterances":"true","punctuate":"true","smart_format":"true"}
     headers = {"Authorization": f"Token {DEEPGRAM_API_KEY}"}
     response = requests.post(url, headers=headers, params=params, json={"url": audio_url})
     result = response.json()
