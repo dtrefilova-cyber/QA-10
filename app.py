@@ -175,23 +175,49 @@ if st.session_state["results"]:
             st.write("⚠️ Аналіз не повернув словник")
 
 # -----------------------------
+# Streamlit UI
+# -----------------------------
+st.title("QA Аналіз дзвінків")
+
+if "results" not in st.session_state:
+    st.session_state["results"] = []
+
+audio_url = st.text_input("Встав URL аудіо дзвінка")
+
+if st.button("Запустити аналіз"):
+    st.session_state["results"].clear()
+    if audio_url:
+        st.write("⏳ Обробка дзвінка...")
+        transcript = transcribe_audio(audio_url)
+        st.markdown("### Транскрипція")
+        st.text(transcript)
+        analysis = analyze_call(transcript, {"url": audio_url}, criteria_rules)
+        if isinstance(analysis, dict):
+            st.session_state["results"].append({
+                "meta": {"url": audio_url},
+                "scores": {k: v for k, v in analysis.items() if k != "Коментар"},
+                "comment": analysis.get("Коментар", "")
+            })
+        else:
+            st.write("⚠️ Аналіз не повернув словник")
+
+# -----------------------------
 # Вивід результатів
 # -----------------------------
 if st.session_state["results"]:
     st.markdown("## Результати аналізу")
 
-    # Формуємо таблицю з усіх дзвінків
     import pandas as pd
     rows = []
     for i, result in enumerate(st.session_state["results"], start=1):
-        scores = result["scores"]
+        scores = result["scores"].copy()
         scores["Коментар"] = result["comment"]
         scores["Дзвінок"] = i
         rows.append(scores)
 
     df = pd.DataFrame(rows)
 
-    # Виводимо таблицю у Streamlit
+    # Показуємо таблицю
     st.dataframe(df)
 
     # Кнопка для завантаження у Excel
@@ -202,8 +228,7 @@ if st.session_state["results"]:
         writer = pd.ExcelWriter(output, engine='xlsxwriter')
         df.to_excel(writer, index=False, sheet_name='Results')
         writer.close()
-        processed_data = output.getvalue()
-        return processed_data
+        return output.getvalue()
 
     excel_file = convert_df_to_excel(df)
     st.download_button(
