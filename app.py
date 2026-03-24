@@ -296,7 +296,7 @@ def score_call(features, meta):
 speech = features.get("speech_quality_good", True)
 
     # якщо GPT повернув рядок замість boolean
-    if isinstance(speech, str):
+if isinstance(speech, str):
     speech = speech.lower() in ["true", "yes", "1"]
 
 scores["Якість мовлення"] = 2.5 if speech else 0
