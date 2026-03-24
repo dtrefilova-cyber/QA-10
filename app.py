@@ -262,6 +262,11 @@ if st.button("Запустити аналіз"):
             continue
         st.write(f"⏳ Обробка дзвінка {i+1}...")
         transcript = transcribe_audio(call["url"])
+
+        # Додай цей блок для перегляду транскрипції
+        st.markdown("### Транскрипція дзвінка")
+        st.text(transcript)
+
         analysis = analyze_call(transcript, call, criteria_rules)
         st.session_state["results"].append({
             "meta": call,
