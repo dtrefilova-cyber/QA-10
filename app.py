@@ -107,9 +107,7 @@ def transcribe_audio(audio_url):
         "smart_format": "true"
     }
 
-    headers = {
-        "Authorization": f"Token {DEEPGRAM_API_KEY}"
-    }
+    headers = {"Authorization": f"Token {DEEPGRAM_API_KEY}"}
 
     response = requests.post(
         url,
@@ -168,6 +166,10 @@ def extract_features(dialogue):
 ВАЖЛИВО:
 
 Бонус ≠ презентація.
+
+Якість мовлення:
+true — якщо мова зрозуміла і немає великої кількості русизмів.
+false — тільки якщо дуже багато русизмів або важко зрозуміти менеджера.
 
 Заперечення — це негатив щодо гри на сайті, бонусів, слотів або роботи сайту.
 
@@ -272,7 +274,6 @@ def score_call(features, meta):
         scores["Привітання"] = 0
 
     scores["Дружелюбне питання / Мета дзвінка"] = 2.5
-
     scores["Спроба продовжити розмову"] = 5 if features["manager_active"] else 0
     scores["Спроба презентації"] = 5 if features["presentation_detected"] else 0
 
@@ -316,11 +317,10 @@ def score_call(features, meta):
     if isinstance(speech, str):
         speech = speech.lower() in ["true", "yes", "1"]
 
-    scores["Якість мовлення"] = 2.5 if speech else 0
+    scores["Якість мовлення"] = 0 if speech is False else 2.5
 
     scores["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
     scores["CRM-картка"] = 5 if meta["manager_comment"] else 0
-
     scores["Робота із запереченнями"] = 10 if not features["objection_detected"] else 5
 
     if features["client_busy"]:
@@ -397,18 +397,10 @@ if st.session_state["results"]:
 
             sheet_name = f"Call_{i+1}"
 
-            meta_df = pd.DataFrame(
-                list(res["meta"].items()),
-                columns=["Поле", "Значення"]
-            )
-
+            meta_df = pd.DataFrame(list(res["meta"].items()), columns=["Поле", "Значення"])
             meta_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=0)
 
-            scores_df = pd.DataFrame(
-                res["scores"].items(),
-                columns=["Критерій", "Оцінка"]
-            )
-
+            scores_df = pd.DataFrame(res["scores"].items(), columns=["Критерій", "Оцінка"])
             scores_df["Оцінка"] = scores_df["Оцінка"].apply(format_score)
 
             scores_df.to_excel(
