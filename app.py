@@ -275,6 +275,7 @@ def score_call(features, meta):
         scores["Привітання"] = 0
 
     scores["Дружелюбне питання / Мета дзвінка"] = 2.5
+
     scores["Спроба продовжити розмову"] = 5 if features["manager_active"] else 0
     scores["Спроба презентації"] = 5 if features["presentation_detected"] else 0
 
@@ -300,7 +301,13 @@ def score_call(features, meta):
     else:
         scores["Пропозиція бонусу"] = 10
 
-    scores["Завершення"] = 2.5
+    # Завершення розмови
+    if features["client_busy"]:
+        scores["Завершення"] = 5
+    elif features["manager_active"]:
+        scores["Завершення"] = 5
+    else:
+        scores["Завершення"] = 0
 
     repeat = meta["repeat_call"]
 
