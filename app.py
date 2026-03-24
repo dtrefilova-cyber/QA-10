@@ -76,6 +76,12 @@ for row in range(5):
                 key=f"comment_{idx}"
             )
 
+            speech_score = st.selectbox(
+                "Якість мовлення (ручна оцінка)",
+                [2.5, 0],
+                key=f"speech_{idx}"
+            )
+
             calls.append({
                 "url": audio_url,
                 "qa_manager": qa_manager,
@@ -85,7 +91,8 @@ for row in range(5):
                 "check_date": check_date.strftime("%d-%m-%Y"),
                 "bonus_check": bonus_check,
                 "repeat_call": repeat_call,
-                "manager_comment": manager_comment
+                "manager_comment": manager_comment,
+                "speech_score": speech_score
             })
 
 
@@ -167,10 +174,6 @@ def extract_features(dialogue):
 
 Бонус ≠ презентація.
 
-Якість мовлення:
-true — якщо мова зрозуміла і немає великої кількості русизмів.
-false — тільки якщо дуже багато русизмів або важко зрозуміти менеджера.
-
 Заперечення — це негатив щодо гри на сайті, бонусів, слотів або роботи сайту.
 
 Фрази "немає часу" або "мені незручно говорити" НЕ є запереченням.
@@ -192,7 +195,6 @@ false — тільки якщо дуже багато русизмів або в
 "presentation_detected": true/false,
 "bonus_offered": true/false,
 "bonus_conditions_count": number,
-"speech_quality_good": true/false,
 "client_busy": true/false,
 "manager_active": true/false,
 "followup_type": "none / offer / day / exact_time",
@@ -220,7 +222,6 @@ false — тільки якщо дуже багато русизмів або в
         "presentation_detected": False,
         "bonus_offered": False,
         "bonus_conditions_count": 0,
-        "speech_quality_good": True,
         "client_busy": False,
         "manager_active": True,
         "followup_type": "none",
@@ -312,12 +313,7 @@ def score_call(features, meta):
 
     scores["Не додумувати"] = 5
 
-    speech = features.get("speech_quality_good", True)
-
-    if isinstance(speech, str):
-        speech = speech.lower() in ["true", "yes", "1"]
-
-    scores["Якість мовлення"] = 0 if speech is False else 2.5
+    scores["Якість мовлення"] = meta["speech_score"]
 
     scores["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
     scores["CRM-картка"] = 5 if meta["manager_comment"] else 0
