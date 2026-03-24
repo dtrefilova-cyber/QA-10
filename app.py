@@ -137,7 +137,7 @@ if st.button("Запустити аналіз"):
         st.write(f"⏳ Обробка дзвінка {i+1}...")
         transcript = transcribe_audio(call["url"])
         analysis_text = analyze_call(transcript, call)
-                try:
+        try:
             analysis_json = json.loads(analysis_text)
         except:
             analysis_json = {}
