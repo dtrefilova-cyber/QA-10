@@ -181,7 +181,7 @@ if st.button("Запустити аналіз"):
         st.write(f"⏳ Обробка дзвінка {i+1}...")
         transcript = transcribe_audio(call["url"])
         analysis = analyze_call(transcript, call, criteria_rules)
-                st.session_state["results"].append({
+        st.session_state["results"].append({
             "meta": call,
             "scores": {k: v for k, v in analysis.items() if k != "Коментар"},
             "comment": analysis["Коментар"]
