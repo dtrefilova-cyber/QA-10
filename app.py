@@ -293,7 +293,7 @@ def score_call(features, meta):
 
     scores["Не додумувати"] = 5
 
-     speech = features.get("speech_quality_good", True)
+speech = features.get("speech_quality_good", True)
 
     # якщо GPT повернув рядок замість boolean
     if isinstance(speech, str):
