@@ -165,42 +165,6 @@ if st.button("Запустити аналіз"):
         else:
             st.write("⚠️ Аналіз не повернув словник")
 
-if st.session_state["results"]:
-    st.markdown("## Результати аналізу")
-    for i, result in enumerate(st.session_state["results"], start=1):
-        st.markdown(f"### Дзвінок {i}")
-        st.json(result["scores"])
-        st.markdown(f"**Коментар:** {result['comment']}")
-        else:
-            st.write("⚠️ Аналіз не повернув словник")
-
-# -----------------------------
-# Streamlit UI
-# -----------------------------
-st.title("QA Аналіз дзвінків")
-
-if "results" not in st.session_state:
-    st.session_state["results"] = []
-
-audio_url = st.text_input("Встав URL аудіо дзвінка")
-
-if st.button("Запустити аналіз"):
-    st.session_state["results"].clear()
-    if audio_url:
-        st.write("⏳ Обробка дзвінка...")
-        transcript = transcribe_audio(audio_url)
-        st.markdown("### Транскрипція")
-        st.text(transcript)
-        analysis = analyze_call(transcript, {"url": audio_url}, criteria_rules)
-        if isinstance(analysis, dict):
-            st.session_state["results"].append({
-                "meta": {"url": audio_url},
-                "scores": {k: v for k, v in analysis.items() if k != "Коментар"},
-                "comment": analysis.get("Коментар", "")
-            })
-        else:
-            st.write("⚠️ Аналіз не повернув словник")
-
 # -----------------------------
 # Вивід результатів
 # -----------------------------
@@ -237,4 +201,3 @@ if st.session_state["results"]:
         file_name="qa_results.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
