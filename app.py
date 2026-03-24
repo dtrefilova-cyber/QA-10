@@ -146,5 +146,25 @@ for i,res in enumerate(st.session_state["results"]):
 if st.session_state["results"]:
     xls = BytesIO()
     with pd.ExcelWriter(xls, engine="openpyxl") as writer:
-        for i,res in enumerate(st.session_state["results"]):
-            sheet_name = f"Call_{
+        for i, res in enumerate(st.session_state["results"]):
+            sheet_name = f"Call_{i+1}"
+
+            # метадані
+            meta_df = pd.DataFrame(list(res["meta"].items()), columns=["Поле", "Значення"])
+            meta_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=0)
+
+            # оцінки
+            scores_df = pd.DataFrame(res["scores"].items(), columns=["Критерій", "Оцінка"])
+            scores_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=len(meta_df)+2)
+
+            # коментар
+            comment_df = pd.DataFrame([["Коментар", res["comment"]]], columns=["Поле", "Значення"])
+            comment_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=len(meta_df)+len(scores_df)+4)
+
+    xls.seek(0)
+    st.download_button(
+        "📥 Завантажити результати у XLSX",
+        xls,
+        "qa_results.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
