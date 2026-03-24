@@ -301,11 +301,11 @@ if isinstance(speech, str):
 
 scores["Якість мовлення"] = 2.5 if speech else 0
 
-    scores["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
+scores["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
 
-    scores["CRM-картка"] = 5 if meta["manager_comment"] else 0
+scores["CRM-картка"] = 5 if meta["manager_comment"] else 0
 
-    scores["Робота із запереченнями"] = 10 if not features["objection_detected"] else 5
+scores["Робота із запереченнями"] = 10 if not features["objection_detected"] else 5
 
     if features["client_busy"]:
         scores["Зливання клієнта"] = 15
