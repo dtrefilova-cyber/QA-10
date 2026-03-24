@@ -175,24 +175,46 @@ def validate_scores(analysis_json, criteria_rules):
 def transcribe_audio(audio_url):
     if not audio_url:
         return None
+
     url = "https://api.deepgram.com/v1/listen"
-    params = {"model":"general","tier":"enhanced","language":"uk","diarize":"true","utterances":"true","punctuate":"true","smart_format":"true"}
+    params = {
+        "model": "general",       # можна тестувати також "nova-2"
+        "tier": "enhanced",       # підвищена якість
+        "language": "uk",         # українська
+        "diarize": "true",
+        "utterances": "true",
+        "punctuate": "true",
+        "smart_format": "true"
+    }
     headers = {"Authorization": f"Token {DEEPGRAM_API_KEY}"}
     response = requests.post(url, headers=headers, params=params, json={"url": audio_url})
     result = response.json()
-    clean_dialogue, current_speaker, current_text = [], None, ""
-    for u in result["results"]["utterances"]:
-        speaker = "Менеджер" if u["speaker"] == 0 else "Гравець"
-        text = u["transcript"].strip()
-        if speaker == current_speaker:
-            current_text += " " + text
-        else:
-            if current_speaker is not None:
-                clean_dialogue.append(f"{current_speaker}: {current_text}")
-            current_speaker, current_text = speaker, text
-    if current_text:
-        clean_dialogue.append(f"{current_speaker}: {current_text}")
-    return "\n".join(clean_dialogue)
+
+    # Для діагностики можна подивитись весь JSON
+    # st.json(result)
+
+    # Якщо є utterances
+    if "utterances" in result.get("results", {}):
+        clean_dialogue = []
+        current_speaker, current_text = None, ""
+        for u in result["results"]["utterances"]:
+            speaker = "Менеджер" if u.get("speaker") == 0 else "Гравець"
+            text = u.get("transcript", "").strip()
+            if speaker == current_speaker:
+                current_text += " " + text
+            else:
+                if current_speaker is not None:
+                    clean_dialogue.append(f"{current_speaker}: {current_text}")
+                current_speaker, current_text = speaker, text
+        if current_text:
+            clean_dialogue.append(f"{current_speaker}: {current_text}")
+        return "\n".join(clean_dialogue)
+
+    # Якщо utterances немає — fallback на суцільний transcript
+    try:
+        return result["results"]["channels"][0]["alternatives"][0]["transcript"]
+    except Exception:
+        return ""
 
 
 def analyze_call(final_dialogue, meta, criteria_rules):
