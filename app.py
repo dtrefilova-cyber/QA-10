@@ -20,105 +20,6 @@ qa_managers_list = [
     "Владимира Балховська","Діана Батрак","Руслана Каленіченко","Шутов Олексій"
 ]
 
-
-# ---------------------------------
-# СЛОВНИК КРИТЕРІЇВ
-# ---------------------------------
-
-criteria_rules = {
-    "Привітання": {
-        0: "Не назвав ім’я, посаду, казино і не звернувся до клієнта по імені",
-        2.5: "Не назвав частину інформації або не звернувся до клієнта по імені",
-        5: "Представився, назвав казино і звернувся до клієнта по імені"
-    },
-
-    "Дружелюбне питання / Мета дзвінка": {
-        0: "Немає дружнього питання або мети дзвінка",
-        2.5: "Є дружнє питання або озвучена мета дзвінка"
-    },
-
-    "Спроба продовжити розмову": {
-        0: "Не намагався продовжити розмову",
-        2.5: "Часткова спроба",
-        5: "Активна спроба продовжити розмову"
-    },
-
-    "Спроба презентації": {
-        0: "Не презентував слот або інфопривід",
-        2.5: "Згадав слот або інфопривід без пояснення",
-        5: "Назвав слот або інфопривід і коротко пояснив"
-    },
-
-    "Домовленість про наступний контакт": {
-        0: "Домовленості немає",
-        5: "Запропонував контакт без часу",
-        7.5: "Домовленість про день",
-        10: "Домовленість про точний час"
-    },
-
-    "Пропозиція бонусу": {
-        0: "Бонус не запропоновано",
-        5: "Бонус без умов",
-        7.5: "Озвучені не всі умови",
-        10: "Озвучені всі умови"
-    },
-
-    "Завершення": {
-        0: "Не попрощався",
-        2.5: "Попрощався"
-    },
-
-    "Передзвон клієнту": {
-        0: "Не передзвонив попри домовленість",
-        5: "Передзвонив до 3 годин",
-        10: "Передзвонив до години або домовленості не було"
-    },
-
-    "Не додумувати": {
-        0: "Менеджер робив припущення",
-        2.5: "Запитав чи зручно говорити",
-        5: "Не робив припущень"
-    },
-
-    "Якість мовлення": {
-        0: "Багато русизмів або слів паразитів",
-        2.5: "Мова чиста"
-    },
-
-    "Професіоналізм": {
-        0: "Заборонені слова",
-        5: "Помилка в бонусі або неактуальна інформація",
-        10: "Все коректно"
-    },
-
-    "CRM-картка": {
-        0: "Коментар відсутній",
-        2.5: "Коментар неповний",
-        5: "Коментар відповідає розмові"
-    },
-
-    "Робота із запереченнями": {
-        0: "Ігнорування заперечення",
-        2.5: "Шаблон без аналізу",
-        5: "Шаблон з питанням",
-        7.5: "Приклади без питання",
-        10: "Повне опрацювання"
-    },
-
-    "Зливання клієнта": {
-        0: "Шукає причину завершити",
-        10: "Пасивний",
-        15: "Активний у розмові"
-    }
-}
-
-rules_json = json.dumps(criteria_rules, ensure_ascii=False, indent=2)
-
-
-# ---------------------------------
-# ВВЕДЕННЯ ДЗВІНКІВ
-# ---------------------------------
-
 calls = []
 
 for row in range(5):
@@ -131,20 +32,13 @@ for row in range(5):
 
             audio_url = st.text_input("Посилання на аудіо", key=f"url_{idx}")
 
-            qa_manager = st.selectbox(
-                "QA менеджер",
-                qa_managers_list,
-                key=f"qa_{idx}"
-            )
+            qa_manager = st.selectbox("QA менеджер", qa_managers_list, key=f"qa_{idx}")
 
             ret_manager = st.text_input("Менеджер RET", key=f"ret_{idx}")
 
             client_id = st.text_input("ID клієнта", key=f"client_{idx}")
 
-            call_date = st.text_input(
-                "Дата дзвінка (ДД-ММ-РРРР)",
-                key=f"date_{idx}"
-            )
+            call_date = st.text_input("Дата дзвінка (ДД-ММ-РРРР)", key=f"date_{idx}")
 
             bonus_check = st.selectbox(
                 "Бонус",
@@ -181,9 +75,9 @@ for row in range(5):
             })
 
 
-# ---------------------------------
-# ТРАНСКРИПЦІЯ
-# ---------------------------------
+# -----------------------------
+# TRANSCRIPTION
+# -----------------------------
 
 def transcribe_audio(audio_url):
 
@@ -201,121 +95,198 @@ def transcribe_audio(audio_url):
         "smart_format":"true"
     }
 
-    headers = {
-        "Authorization": f"Token {DEEPGRAM_API_KEY}"
-    }
+    headers = {"Authorization": f"Token {DEEPGRAM_API_KEY}"}
 
-    response = requests.post(
-        url,
-        headers=headers,
-        params=params,
-        json={"url": audio_url}
-    )
+    response = requests.post(url, headers=headers, params=params, json={"url": audio_url})
 
     result = response.json()
 
-    clean_dialogue = []
-
+    dialogue = []
     current_speaker = None
     current_text = ""
 
     for u in result["results"]["utterances"]:
 
         speaker = "Менеджер" if u["speaker"] == 0 else "Гравець"
-
         text = u["transcript"].strip()
 
         if speaker == current_speaker:
-
             current_text += " " + text
-
         else:
-
             if current_speaker is not None:
-                clean_dialogue.append(f"{current_speaker}: {current_text}")
-
+                dialogue.append(f"{current_speaker}: {current_text}")
             current_speaker = speaker
             current_text = text
 
     if current_text:
-        clean_dialogue.append(f"{current_speaker}: {current_text}")
+        dialogue.append(f"{current_speaker}: {current_text}")
 
-    return "\n".join(clean_dialogue)
+    return "\n".join(dialogue)
 
 
-# ---------------------------------
-# GPT АНАЛІЗ
-# ---------------------------------
+# -----------------------------
+# FEATURE EXTRACTION
+# -----------------------------
 
-def analyze_call(final_dialogue, meta):
-
-    if not final_dialogue:
-        return None
+def extract_features(dialogue):
 
     prompt = f"""
-Ти QA-аналітик казино.
+Проаналізуй дзвінок.
 
-Оціни дзвінок за 14 критеріями.
+ВАЖЛИВО:
+Бонус не є презентацією.
 
-Використовуй тільки дозволені оцінки з правил.
+Презентація = слоти, ігри, турніри або функції сайту.
 
-Правила:
-{rules_json}
-
-Відповідь поверни СТРОГО у JSON.
-
-Формат відповіді:
+Поверни тільки JSON:
 
 {{
-"Привітання": 0,
-"Дружелюбне питання / Мета дзвінка": 0,
-"Спроба продовжити розмову": 0,
-"Спроба презентації": 0,
-"Домовленість про наступний контакт": 0,
-"Пропозиція бонусу": 0,
-"Завершення": 0,
-"Передзвон клієнту": 0,
-"Не додумувати": 0,
-"Якість мовлення": 0,
-"Професіоналізм": 0,
-"CRM-картка": 0,
-"Робота із запереченнями": 0,
-"Зливання клієнта": 0,
-"Коментар": ""
+"manager_introduced_self": true/false,
+"client_name_used": true/false,
+"presentation_detected": true/false,
+"bonus_offered": true/false,
+"bonus_conditions_count": number,
+"speech_quality_good": true/false,
+"client_busy": true/false,
+"manager_active": true/false,
+"followup_agreement": true/false,
+"objection_detected": true/false
 }}
 
-Дані CRM:
+Дзвінок:
 
-bonus_check = "{meta['bonus_check']}"
-repeat_call = "{meta['repeat_call']}"
-manager_comment = "{meta['manager_comment']}"
-
-Транскрипція дзвінка:
-
-{final_dialogue}
+{dialogue}
 """
 
     response = client.chat.completions.create(
         model="gpt-4.1",
+        temperature=0,
         messages=[
-            {
-                "role": "system",
-                "content": "Ти система контролю якості дзвінків. Відповідаєш тільки JSON."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        temperature=0
+            {"role":"system","content":"Ти система аналізу дзвінків."},
+            {"role":"user","content":prompt}
+        ]
+    )
+
+    try:
+        return json.loads(response.choices[0].message.content)
+    except:
+        return {}
+
+
+# -----------------------------
+# GPT COMMENT
+# -----------------------------
+
+def generate_comment(dialogue):
+
+    prompt = f"""
+Коротко підсумуй дзвінок менеджера казино.
+
+1-3 речення.
+Вкажи сильні сторони та рекомендацію.
+
+{dialogue}
+"""
+
+    response = client.chat.completions.create(
+        model="gpt-4.1",
+        temperature=0.3,
+        messages=[
+            {"role":"system","content":"Ти QA-аналітик дзвінків."},
+            {"role":"user","content":prompt}
+        ]
     )
 
     return response.choices[0].message.content
 
 
-# ---------------------------------
-# ЗБЕРЕЖЕННЯ РЕЗУЛЬТАТІВ
-# ---------------------------------
+# -----------------------------
+# SCORING
+# -----------------------------
+
+def score_call(features, meta):
+
+    scores = {}
+
+    introduced = features.get("manager_introduced_self")
+    client_name = features.get("client_name_used")
+
+    if introduced and client_name:
+        scores["Привітання"] = 5
+    elif introduced or client_name:
+        scores["Привітання"] = 2.5
+    else:
+        scores["Привітання"] = 0
+
+
+    scores["Дружелюбне питання / Мета дзвінка"] = 2.5
+
+
+    scores["Спроба продовжити розмову"] = 5 if features.get("manager_active") else 0
+
+
+    scores["Спроба презентації"] = 5 if features.get("presentation_detected") else 0
+
+
+    scores["Домовленість про наступний контакт"] = 10 if features.get("followup_agreement") else 0
+
+
+    bonus_conditions = features.get("bonus_conditions_count",0)
+
+    if not features.get("bonus_offered"):
+        scores["Пропозиція бонусу"] = 0
+    elif bonus_conditions == 0:
+        scores["Пропозиція бонусу"] = 5
+    elif bonus_conditions == 1:
+        scores["Пропозиція бонусу"] = 7.5
+    else:
+        scores["Пропозиція бонусу"] = 10
+
+
+    scores["Завершення"] = 2.5
+
+
+    repeat = meta["repeat_call"]
+
+    if repeat == "так, був протягом години":
+        scores["Передзвон клієнту"] = 10
+    elif repeat == "так, був протягом 3 годин":
+        scores["Передзвон клієнту"] = 5
+    else:
+        scores["Передзвон клієнту"] = 10
+
+
+    scores["Не додумувати"] = 5
+
+
+    scores["Якість мовлення"] = 2.5 if features.get("speech_quality_good") else 0
+
+
+    scores["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
+
+
+    scores["CRM-картка"] = 5 if meta["manager_comment"] else 0
+
+
+    if not features.get("objection_detected"):
+        scores["Робота із запереченнями"] = 10
+    else:
+        scores["Робота із запереченнями"] = 5
+
+
+    if features.get("client_busy"):
+        scores["Зливання клієнта"] = 15
+    elif features.get("manager_active"):
+        scores["Зливання клієнта"] = 15
+    else:
+        scores["Зливання клієнта"] = 10
+
+    return scores
+
+
+# -----------------------------
+# ANALYSIS
+# -----------------------------
 
 if "results" not in st.session_state:
     st.session_state["results"] = []
@@ -333,16 +304,11 @@ if st.button("Запустити аналіз"):
 
         transcript = transcribe_audio(call["url"])
 
-        analysis_text = analyze_call(transcript, call)
+        features = extract_features(transcript)
 
-        try:
-            analysis_json = json.loads(analysis_text)
-        except:
-            analysis_json = {}
+        scores = score_call(features, call)
 
-        scores = {k: v for k, v in analysis_json.items() if k != "Коментар"}
-
-        comment = analysis_json.get("Коментар", "")
+        comment = generate_comment(transcript)
 
         st.session_state["results"].append({
             "meta": call,
@@ -351,47 +317,29 @@ if st.button("Запустити аналіз"):
         })
 
 
-# ---------------------------------
-# ВИВІД РЕЗУЛЬТАТІВ
-# ---------------------------------
-
-def format_score(x):
-
-    try:
-        return f"{float(x):.1f}"
-    except:
-        return x
-
+# -----------------------------
+# OUTPUT
+# -----------------------------
 
 for i, res in enumerate(st.session_state["results"]):
 
     with st.expander(f"📊 Результат дзвінка {i+1}", expanded=True):
 
-        df = pd.DataFrame(
-            res["scores"].items(),
-            columns=["Критерій", "Оцінка"]
-        )
-
-        df["Оцінка"] = df["Оцінка"].apply(format_score)
+        df = pd.DataFrame(res["scores"].items(), columns=["Критерій","Оцінка"])
 
         st.table(df)
 
-        total_score = sum(
-            float(v)
-            for v in res["scores"].values()
-            if str(v).replace('.', '', 1).isdigit()
-        )
+        total_score = sum(res["scores"].values())
 
-        st.markdown(f"**Загальний бал:** {total_score:.1f}")
+        st.markdown(f"**Загальний бал:** {total_score}")
 
         st.markdown("### Коментар")
-
         st.write(res["comment"])
 
 
-# ---------------------------------
-# ЕКСПОРТ У EXCEL
-# ---------------------------------
+# -----------------------------
+# EXPORT EXCEL
+# -----------------------------
 
 if st.session_state["results"]:
 
@@ -403,43 +351,14 @@ if st.session_state["results"]:
 
             sheet_name = f"Call_{i+1}"
 
-            meta_df = pd.DataFrame(
-                list(res["meta"].items()),
-                columns=["Поле","Значення"]
-            )
+            meta_df = pd.DataFrame(list(res["meta"].items()), columns=["Поле","Значення"])
+            meta_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=0)
 
-            meta_df.to_excel(
-                writer,
-                index=False,
-                sheet_name=sheet_name,
-                startrow=0
-            )
+            scores_df = pd.DataFrame(res["scores"].items(), columns=["Критерій","Оцінка"])
+            scores_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=len(meta_df)+2)
 
-            scores_df = pd.DataFrame(
-                res["scores"].items(),
-                columns=["Критерій","Оцінка"]
-            )
-
-            scores_df["Оцінка"] = scores_df["Оцінка"].apply(format_score)
-
-            scores_df.to_excel(
-                writer,
-                index=False,
-                sheet_name=sheet_name,
-                startrow=len(meta_df)+2
-            )
-
-            comment_df = pd.DataFrame(
-                [["Коментар", res["comment"]]],
-                columns=["Поле","Значення"]
-            )
-
-            comment_df.to_excel(
-                writer,
-                index=False,
-                sheet_name=sheet_name,
-                startrow=len(meta_df)+len(scores_df)+4
-            )
+            comment_df = pd.DataFrame([["Коментар", res["comment"]]], columns=["Поле","Значення"])
+            comment_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=len(meta_df)+len(scores_df)+4)
 
     xls.seek(0)
 
