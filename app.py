@@ -171,7 +171,7 @@ if st.session_state["results"]:
         st.markdown(f"### Дзвінок {i}")
         st.json(result["scores"])
         st.markdown(f"**Коментар:** {result['comment']}")
-                else:
+        else:
             st.write("⚠️ Аналіз не повернув словник")
 
 # -----------------------------
