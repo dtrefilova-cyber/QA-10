@@ -126,7 +126,7 @@ manager_comment = "{meta['manager_comment']}"
     )
     return response.choices[0].message.content
 
-
+# Збереження результатів
 if "results" not in st.session_state:
     st.session_state["results"] = []
 
@@ -137,40 +137,34 @@ if st.button("Запустити аналіз"):
         st.write(f"⏳ Обробка дзвінка {i+1}...")
         transcript = transcribe_audio(call["url"])
         analysis_text = analyze_call(transcript, call)
-        try: analysis_json = json.loads(analysis_text)
-        except: analysis_json = {}
-        scores = {k:v for k,v in analysis_json.items() if k!="comment"}
-        comment = analysis_json.get("comment","")
-        st.session_state["results"].append({"meta":call,"scores":scores,"comment":comment})
+                try:
+            analysis_json = json.loads(analysis_text)
+        except:
+            analysis_json = {}
+
+        scores = {k: v for k, v in analysis_json.items() if k != "Коментар"}
+        comment = analysis_json.get("Коментар", "")
+
+        st.session_state["results"].append({
+            "meta": call,
+            "scores": scores,
+            "comment": comment
+        })
 
 # Вивід результатів
-criteria_map = {
-    "greeting": "Вітання",
-    "friendly_question": "Дружелюбне питання / Мета дзвінка",
-    "continue_conversation": "Спроба продовжити розмову",
-    "presentation_attempt": "Спроба презентації",
-    "next_contact": "Домовленість про наступний контакт",
-    "bonus_offer": "Пропозиція бонусу",
-    "closing": "Прощання",
-    "callback": "Передзвон клієнту",
-    "not_assume": "Не робити припущень",
-    "speech_quality": "Якість мовлення",
-    "professionalism": "Професіоналізм",
-    "crm_card": "CRM-картка",
-    "objection_handling": "Робота із запереченнями",
-    "client_dumping": "Зливання клієнта"
-}
+def format_score(x):
+    try:
+        return f"{float(x):.1f}"
+    except:
+        return x
 
 for i, res in enumerate(st.session_state["results"]):
     with st.expander(f"📊 Результат дзвінка {i+1}", expanded=True):
-        # замінюємо ключі на українські назви
-        scores = {criteria_map.get(k, k): v for k, v in res["scores"].items()}
-        df = pd.DataFrame(scores.items(), columns=["Критерій","Оцінка"])
-        # форматування з однією цифрою після коми
-        df["Оцінка"] = df["Оцінка"].apply(lambda x: f"{float(x):.1f}")
+        df = pd.DataFrame(res["scores"].items(), columns=["Критерій", "Оцінка"])
+        df["Оцінка"] = df["Оцінка"].apply(format_score)
         st.table(df)
 
-        total_score = sum(float(v) for v in res["scores"].values())
+        total_score = sum(float(v) for v in res["scores"].values() if str(v).replace('.', '', 1).isdigit())
         st.markdown(f"**Загальний бал:** {total_score:.1f}")
 
         st.markdown("### Коментар")
@@ -187,10 +181,9 @@ if st.session_state["results"]:
             meta_df = pd.DataFrame(list(res["meta"].items()), columns=["Поле", "Значення"])
             meta_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=0)
 
-            # оцінки (українською)
-            scores = {criteria_map.get(k, k): v for k, v in res["scores"].items()}
-            scores_df = pd.DataFrame(scores.items(), columns=["Критерій", "Оцінка"])
-            scores_df["Оцінка"] = scores_df["Оцінка"].apply(lambda x: f"{float(x):.1f}")
+            # оцінки
+            scores_df = pd.DataFrame(res["scores"].items(), columns=["Критерій", "Оцінка"])
+            scores_df["Оцінка"] = scores_df["Оцінка"].apply(format_score)
             scores_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=len(meta_df)+2)
 
             # коментар
