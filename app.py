@@ -307,7 +307,7 @@ scores["CRM-картка"] = 5 if meta["manager_comment"] else 0
 
 scores["Робота із запереченнями"] = 10 if not features["objection_detected"] else 5
 
-    if features["client_busy"]:
+if features["client_busy"]:
         scores["Зливання клієнта"] = 15
     elif features["manager_active"]:
         scores["Зливання клієнта"] = 15
