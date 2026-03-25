@@ -3,3 +3,5 @@ openai
 deepgram-sdk
 pandas
 openpyxl
+gspread
+google-auth
