@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import json
+import re
 from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
@@ -123,7 +124,13 @@ def transcribe_audio(audio_url):
         json={"url": audio_url}
     )
 
+    if response.status_code != 200:
+        return None
+
     result = response.json()
+
+    if "results" not in result:
+        return None
 
     dialogue = []
     current_speaker = None
@@ -170,13 +177,26 @@ def extract_features(dialogue):
     prompt = f"""
 Проаналізуй дзвінок.
 
-ВАЖЛИВО:
+Сайти компанії:
+777 — онлайн казино
+Betking — онлайн казино + ставки на спорт + esport
+Vegas — онлайн казино
 
-Бонус ≠ презентація.
+СПРОБА ПРЕЗЕНТАЦІЇ:
+будь-яка згадка:
+слоту, бонусу, турніру, акції, фріспінів, активності,
+згадка сайтів 777 / Betking / Vegas
+або фраза про відправку пропозиції на email.
 
-Заперечення — це негатив щодо гри на сайті, бонусів, слотів або роботи сайту.
+Навіть коротка згадка = презентація.
 
-Фрази "немає часу" або "мені незручно говорити" НЕ є запереченням.
+FOLLOWUP:
+exact_time — точний час або інтервал
+(наприклад: "о 15", "після 15", "з 15", "ближче до вечора")
+
+day — домовленість про день
+offer — пропозиція передзвонити
+none — домовленості немає
 
 Початок дзвінка:
 {intro}
@@ -187,7 +207,7 @@ def extract_features(dialogue):
 Кінець:
 {ending}
 
-Поверни JSON:
+Поверни тільки JSON:
 
 {{
 "manager_introduced_self": true/false,
@@ -211,9 +231,13 @@ def extract_features(dialogue):
         ]
     )
 
-    try:
-        features = json.loads(response.choices[0].message.content)
-    except:
+    text = response.choices[0].message.content
+
+    match = re.search(r"\{.*\}", text, re.S)
+
+    if match:
+        features = json.loads(match.group())
+    else:
         features = {}
 
     defaults = {
@@ -301,7 +325,6 @@ def score_call(features, meta):
     else:
         scores["Пропозиція бонусу"] = 10
 
-    # Завершення розмови
     if features["client_busy"]:
         scores["Завершення"] = 5
     elif features["manager_active"]:
@@ -316,10 +339,12 @@ def score_call(features, meta):
     elif repeat == "так, був протягом 3 годин":
         scores["Передзвон клієнту"] = 5
     else:
-        scores["Передзвон клієнту"] = 10
+        if followup != "none":
+            scores["Передзвон клієнту"] = 0
+        else:
+            scores["Передзвон клієнту"] = 10
 
     scores["Не додумувати"] = 5
-
     scores["Якість мовлення"] = meta["speech_score"]
 
     scores["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
@@ -359,6 +384,11 @@ if st.button("Запустити аналіз"):
         st.write(f"⏳ Обробка дзвінка {i+1}...")
 
         transcript = transcribe_audio(call["url"])
+
+        if not transcript:
+            st.write("⚠️ Не вдалося отримати транскрипт")
+            continue
+
         features = extract_features(transcript)
         scores = score_call(features, call)
         comment = generate_comment(transcript)
