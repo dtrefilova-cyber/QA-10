@@ -9,7 +9,6 @@ from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
 
-
 DEEPGRAM_API_KEY = st.secrets["DEEPGRAM_API_KEY"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
@@ -42,7 +41,6 @@ META_ROWS = {
 
 
 CRITERIA_ROWS = {
-
 "Привітання":5,
 "Дружелюбне питання / Мета дзвінка":6,
 "Спроба продовжити розмову":7,
@@ -50,7 +48,6 @@ CRITERIA_ROWS = {
 "Домовленість про наступний контакт":9,
 "Пропозиція бонусу":10,
 "Завершення":11,
-
 "Передзвон клієнту":12,
 "Не додумувати":13,
 "Якість мовлення":14,
@@ -65,17 +62,16 @@ def find_next_column(sheet):
 
     row = sheet.row_values(META_ROWS["client_id"])
 
-    for i, value in enumerate(row, start=1):
-
-        if value == "":
+    for i,v in enumerate(row,start=1):
+        if v=="":
             return i
 
-    return len(row) + 1
+    return len(row)+1
 
 
 def find_manager_sheet(client, manager_name):
 
-    manager_name = manager_name.lower().strip()
+    manager_name=manager_name.lower().strip()
 
     for file in client.openall():
 
@@ -87,102 +83,94 @@ def find_manager_sheet(client, manager_name):
 
 def write_to_google_sheet(client, meta, scores):
 
-    spreadsheet = find_manager_sheet(client, meta["ret_manager"])
+    spreadsheet=find_manager_sheet(client, meta["ret_manager"])
 
     if not spreadsheet:
-        st.warning(f"Таблицю менеджера '{meta['ret_manager']}' не знайдено")
         return
 
-    sheet = spreadsheet.sheet1
-    column = find_next_column(sheet)
+    sheet=spreadsheet.sheet1
+    column=find_next_column(sheet)
 
-    updates = []
+    cells=[]
 
-    updates.append((META_ROWS["call_date"], meta["call_date"]))
-    updates.append((META_ROWS["qa_manager"], meta["qa_manager"]))
-    updates.append((META_ROWS["client_id"], meta["client_id"]))
-    updates.append((META_ROWS["check_date"], meta["check_date"]))
+    cells.append(gspread.Cell(META_ROWS["call_date"],column,meta["call_date"]))
+    cells.append(gspread.Cell(META_ROWS["qa_manager"],column,meta["qa_manager"]))
+    cells.append(gspread.Cell(META_ROWS["client_id"],column,meta["client_id"]))
+    cells.append(gspread.Cell(META_ROWS["check_date"],column,meta["check_date"]))
 
-    for criterion, score in scores.items():
+    for criterion,score in scores.items():
 
         if criterion in CRITERIA_ROWS:
 
-            row = CRITERIA_ROWS[criterion]
-            updates.append((row, float(score)))
-
-    cells = []
-
-    for row, value in updates:
-        cells.append(gspread.Cell(row, column, value))
+            row=CRITERIA_ROWS[criterion]
+            cells.append(gspread.Cell(row,column,float(score)))
 
     sheet.update_cells(cells)
 
 
 # ---------------- TRANSCRIPTION ----------------
 
-def transcribe_audio(audio_url):
+def transcribe_audio(url):
 
-    if not audio_url:
-        return None
+    dg_url="https://api.deepgram.com/v1/listen"
 
-    url = "https://api.deepgram.com/v1/listen"
+    headers={"Authorization":f"Token {DEEPGRAM_API_KEY}"}
 
-    params = {
-        "model": "nova-2",
-        "language": "uk",
-        "diarize": True,
-        "utterances": True,
-        "punctuate": True
+    params={
+        "model":"nova-2",
+        "language":"uk",
+        "diarize":True,
+        "utterances":True,
+        "punctuate":True
     }
 
-    headers = {"Authorization": f"Token {DEEPGRAM_API_KEY}"}
-
-    response = requests.post(
-        url,
+    response=requests.post(
+        dg_url,
         headers=headers,
         params=params,
-        json={"url": audio_url}
+        json={"url":url}
     )
 
-    if response.status_code != 200:
+    if response.status_code!=200:
         return None
 
-    result = response.json()
+    data=response.json()
 
     try:
 
-        dialogue = []
-        current_speaker = None
-        current_text = ""
+        dialogue=[]
+        current=None
+        text=""
 
-        for u in result["results"]["utterances"]:
+        for u in data["results"]["utterances"]:
 
-            speaker = "Менеджер" if u["speaker"] == 0 else "Клієнт"
-            text = u["transcript"].strip()
+            speaker="Менеджер" if u["speaker"]==0 else "Клієнт"
 
-            if speaker == current_speaker:
-                current_text += " " + text
+            if speaker==current:
+                text+=" "+u["transcript"]
+
             else:
-                if current_speaker is not None:
-                    dialogue.append(f"{current_speaker}: {current_text}")
 
-                current_speaker = speaker
-                current_text = text
+                if current:
+                    dialogue.append(f"{current}: {text}")
 
-        if current_text:
-            dialogue.append(f"{current_speaker}: {current_text}")
+                current=speaker
+                text=u["transcript"]
+
+        if text:
+            dialogue.append(f"{current}: {text}")
 
         return "\n".join(dialogue)
 
-    except Exception:
+    except:
         return None
 
 
-# ---------------- FEATURE EXTRACTION ----------------
+# ---------------- GPT FEATURES ----------------
 
 def extract_features(dialogue):
 
-    prompt = f"""
+    prompt=f"""
 Проаналізуй дзвінок менеджера.
 
 Поверни JSON:
@@ -191,8 +179,6 @@ def extract_features(dialogue):
 "manager_introduced_self": true/false,
 "client_name_used": true/false,
 "presentation_detected": true/false,
-"bonus_offered": true/false,
-"bonus_conditions_count": number,
 "client_busy": true/false,
 "manager_active": true/false,
 "followup_type": "none / offer / day / exact_time",
@@ -202,7 +188,7 @@ def extract_features(dialogue):
 {dialogue}
 """
 
-    response = client.chat.completions.create(
+    r=client.chat.completions.create(
         model="gpt-4.1",
         temperature=0,
         messages=[
@@ -211,31 +197,29 @@ def extract_features(dialogue):
         ]
     )
 
-    text = response.choices[0].message.content
+    text=r.choices[0].message.content
 
-    match = re.search(r"\{.*\}", text, re.S)
+    m=re.search(r"\{.*\}",text,re.S)
 
-    if match:
-        features = json.loads(match.group())
-    else:
-        features = {}
+    if m:
+        return json.loads(m.group())
 
-    return features
+    return {}
 
 
 # ---------------- COMMENT ----------------
 
 def generate_comment(dialogue):
 
-    prompt = f"""
+    prompt=f"""
 Коротко підсумуй дзвінок менеджера.
 
-1-2 речення: сильна сторона + рекомендація.
+1-2 речення: сильна сторона і рекомендація.
 
 {dialogue}
 """
 
-    response = client.chat.completions.create(
+    r=client.chat.completions.create(
         model="gpt-4.1",
         temperature=0.3,
         messages=[
@@ -244,60 +228,52 @@ def generate_comment(dialogue):
         ]
     )
 
-    return response.choices[0].message.content
+    return r.choices[0].message.content
 
 
 # ---------------- SCORING ----------------
 
-def score_call(features, meta):
+def score_call(f,meta):
 
-    scores = {}
+    scores={}
 
-    introduced = features.get("manager_introduced_self")
-    client_name = features.get("client_name_used")
-
-    if introduced and client_name:
-        scores["Привітання"] = 5
-    elif introduced or client_name:
-        scores["Привітання"] = 2.5
+    if f.get("manager_introduced_self") and f.get("client_name_used"):
+        scores["Привітання"]=5
+    elif f.get("manager_introduced_self") or f.get("client_name_used"):
+        scores["Привітання"]=2.5
     else:
-        scores["Привітання"] = 0
+        scores["Привітання"]=0
 
-    scores["Дружелюбне питання / Мета дзвінка"] = 2.5
-    scores["Спроба продовжити розмову"] = 5 if features.get("manager_active") else 0
-    scores["Спроба презентації"] = 5 if features.get("presentation_detected") else 0
+    scores["Дружелюбне питання / Мета дзвінка"]=2.5
+    scores["Спроба продовжити розмову"]=5 if f.get("manager_active") else 0
+    scores["Спроба презентації"]=5 if f.get("presentation_detected") else 0
 
-    followup = features.get("followup_type")
+    follow=f.get("followup_type")
 
-    if followup == "exact_time":
-        scores["Домовленість про наступний контакт"] = 10
-    elif followup == "day":
-        scores["Домовленість про наступний контакт"] = 7.5
-    elif followup == "offer":
-        scores["Домовленість про наступний контакт"] = 5
+    if follow=="exact_time":
+        scores["Домовленість про наступний контакт"]=10
+    elif follow=="day":
+        scores["Домовленість про наступний контакт"]=7.5
+    elif follow=="offer":
+        scores["Домовленість про наступний контакт"]=5
     else:
-        scores["Домовленість про наступний контакт"] = 0
+        scores["Домовленість про наступний контакт"]=0
 
-    repeat = meta["repeat_call"]
+    repeat=meta["repeat_call"]
 
-    if repeat == "так, був протягом години":
-        scores["Передзвон клієнту"] = 10
-    elif repeat == "так, був протягом 3 годин":
-        scores["Передзвон клієнту"] = 5
+    if repeat=="так, був протягом години":
+        scores["Передзвон клієнту"]=10
+    elif repeat=="так, був протягом 3 годин":
+        scores["Передзвон клієнту"]=5
     else:
-        if followup != "none":
-            scores["Передзвон клієнту"] = 0
-        else:
-            scores["Передзвон клієнту"] = 10
+        scores["Передзвон клієнту"]=0 if follow!="none" else 10
 
-    scores["Не додумувати"] = 5
-    scores["Якість мовлення"] = meta["speech_score"]
-
-    scores["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
-    scores["CRM-картка"] = 5 if meta["manager_comment"] else 0
-
-    scores["Робота із запереченнями"] = 10 if not features.get("objection_detected") else 5
-    scores["Зливання клієнта"] = 15
+    scores["Не додумувати"]=5
+    scores["Якість мовлення"]=meta["speech_score"]
+    scores["Професіоналізм"]=5 if meta["bonus_check"]=="помилково нараховано" else 10
+    scores["CRM-картка"]=5 if meta["manager_comment"] else 0
+    scores["Робота із запереченнями"]=10 if not f.get("objection_detected") else 5
+    scores["Зливання клієнта"]=15
 
     return scores
 
@@ -306,9 +282,9 @@ def score_call(features, meta):
 
 st.title("🎧 QA-10: Аналіз дзвінків")
 
-check_date = st.date_input("Дата перевірки", datetime.today())
+check_date=st.date_input("Дата перевірки",datetime.today())
 
-qa_managers_list = [
+qa_list=[
 "Аліна Пронь",
 "Дар'я Трефілова",
 "Надія Татаренко",
@@ -319,129 +295,124 @@ qa_managers_list = [
 "Шутов Олексій"
 ]
 
-calls = []
+calls=[]
 
 for row in range(5):
 
-    col1, col2 = st.columns(2)
+    c1,c2=st.columns(2)
 
-    for col, idx in zip([col1, col2], [row*2+1, row*2+2]):
+    for col,idx in zip([c1,c2],[row*2+1,row*2+2]):
 
         with col.expander(f"📞 Дзвінок {idx}"):
 
-            audio_url = st.text_input("Посилання на аудіо", key=f"url_{idx}")
+            url=st.text_input("Посилання на аудіо",key=f"url_{idx}")
+            qa=st.selectbox("QA менеджер",qa_list,key=f"qa_{idx}")
+            ret=st.text_input("Менеджер RET",key=f"ret_{idx}")
+            cid=st.text_input("ID клієнта",key=f"client_{idx}")
+            date=st.text_input("Дата дзвінка",key=f"date_{idx}")
 
-            qa_manager = st.selectbox("QA менеджер", qa_managers_list, key=f"qa_{idx}")
-
-            ret_manager = st.text_input("Менеджер RET", key=f"ret_{idx}")
-
-            client_id = st.text_input("ID клієнта", key=f"client_{idx}")
-
-            call_date = st.text_input("Дата дзвінка", key=f"date_{idx}")
-
-            bonus_check = st.selectbox(
+            bonus=st.selectbox(
                 "Бонус",
                 ["правильно нараховано","помилково нараховано","не потрібно"],
                 key=f"bonus_{idx}"
             )
 
-            repeat_call = st.selectbox(
+            repeat=st.selectbox(
                 "Повторний дзвінок",
                 ["так, був протягом години","так, був протягом 3 годин","ні, не було"],
                 key=f"repeat_{idx}"
             )
 
-            manager_comment = st.text_area("Коментар менеджера",key=f"comment_{idx}")
-
-            speech_score = st.selectbox("Якість мовлення",[2.5,0],key=f"speech_{idx}")
+            comment=st.text_area("Коментар менеджера",key=f"comment_{idx}")
+            speech=st.selectbox("Якість мовлення",[2.5,0],key=f"speech_{idx}")
 
             calls.append({
-                "url":audio_url,
-                "qa_manager":qa_manager,
-                "ret_manager":ret_manager,
-                "client_id":client_id,
-                "call_date":call_date,
+                "url":url,
+                "qa_manager":qa,
+                "ret_manager":ret,
+                "client_id":cid,
+                "call_date":date,
                 "check_date":check_date.strftime("%d-%m-%Y"),
-                "bonus_check":bonus_check,
-                "repeat_call":repeat_call,
-                "manager_comment":manager_comment,
-                "speech_score":speech_score
+                "bonus_check":bonus,
+                "repeat_call":repeat,
+                "manager_comment":comment,
+                "speech_score":speech
             })
 
 
-status = st.empty()
-progress = st.progress(0)
+status=st.empty()
+progress=st.progress(0)
 
+
+# ---------------- ANALYSIS ----------------
+
+if "results" not in st.session_state:
+    st.session_state["results"]=[]
 
 if st.button("Запустити аналіз"):
 
-    results = []
+    st.session_state["results"].clear()
 
-    google_client = connect_google()
+    google_client=connect_google()
 
-    total = len([c for c in calls if c["url"]])
-    done = 0
+    total=len([c for c in calls if c["url"]])
+    done=0
 
-    for i, call in enumerate(calls):
+    for i,call in enumerate(calls):
 
         if not call["url"]:
             continue
 
         status.write(f"Аналіз дзвінка {i+1}")
 
-        transcript = transcribe_audio(call["url"])
+        transcript=transcribe_audio(call["url"])
 
         if not transcript:
-            status.write("⚠️ Транскрипцію не отримано")
             continue
 
-        features = extract_features(transcript)
-        scores = score_call(features, call)
-        comment = generate_comment(transcript)
+        features=extract_features(transcript)
+        scores=score_call(features,call)
+        comment=generate_comment(transcript)
 
-        write_to_google_sheet(google_client, call, scores)
+        write_to_google_sheet(google_client,call,scores)
 
-        results.append({
+        st.session_state["results"].append({
             "meta":call,
             "scores":scores,
             "comment":comment
         })
 
-        done += 1
+        done+=1
         progress.progress(done/total)
-
-    st.session_state["results"] = results
 
     status.success("Аналіз завершено")
 
 
 # ---------------- RESULTS ----------------
 
-if "results" in st.session_state:
+if st.session_state["results"]:
 
     for i,res in enumerate(st.session_state["results"]):
 
-        with st.expander(f"📊 Результат дзвінка {i+1}", expanded=True):
+        with st.expander(f"📊 Результат дзвінка {i+1}",expanded=True):
 
-            df = pd.DataFrame(res["scores"].items(),columns=["Критерій","Оцінка"])
+            df=pd.DataFrame(res["scores"].items(),columns=["Критерій","Оцінка"])
+            df["Оцінка"]=df["Оцінка"].astype(float).map(lambda x:f"{x:.1f}")
 
             st.table(df)
 
-            total = sum(res["scores"].values())
-
-            st.markdown(f"### Загальний бал: {total}")
-
-            st.markdown("### Коментар QA")
+            total=sum(res["scores"].values())
+            st.markdown(f"### Загальний бал: {total:.1f}")
             st.write(res["comment"])
 
 
 # ---------------- EXPORT ----------------
 
-if "results" in st.session_state and len(st.session_state["results"]) > 0:
+if st.session_state["results"]:
 
-    buffer = BytesIO()
+    buffer=BytesIO()
 
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+    with pd.ExcelWriter(buffer,engine="openpyxl") as writer:
 
         for i,res in enumerate(st.session_state["results"]):
 
