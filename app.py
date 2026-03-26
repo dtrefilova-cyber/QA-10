@@ -16,10 +16,10 @@ OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 
-# ---------------- FORMAT SCORE ----------------
+# ---------------- FORMAT ----------------
 
 def format_score(x):
-    return float(f"{float(x):.1f}")
+    return f"{float(x):.1f}"
 
 
 # ---------------- GOOGLE SHEETS ----------------
@@ -58,7 +58,6 @@ CRITERIA_ROWS = {
 "Зливання клієнта": 23
 }
 
-
 META_ROWS = {
 
 "call_date": 1,
@@ -88,6 +87,7 @@ def write_to_google_sheet(meta, scores):
         client = connect_google()
 
         spreadsheet = client.open(meta["ret_manager"])
+
         sheet = spreadsheet.sheet1
 
         column = find_next_column(sheet)
@@ -111,92 +111,6 @@ def write_to_google_sheet(meta, scores):
             st.warning(f"Не вдалося записати у Google Sheets: {e}")
 
 
-# ---------------- STREAMLIT UI ----------------
-
-st.title("🎧 QA-10: Аналіз дзвінків")
-
-check_date = st.date_input("Дата перевірки", datetime.today())
-
-qa_managers_list = [
-    "Аліна Пронь",
-    "Дар'я Трефілова",
-    "Надія Татаренко",
-    "Анастасія Собакіна",
-    "Владимира Балховська",
-    "Діана Батрак",
-    "Руслана Каленіченко",
-    "Шутов Олексій"
-]
-
-calls = []
-
-for row in range(5):
-
-    col1, col2 = st.columns(2)
-
-    for col, idx in zip([col1, col2], [row * 2 + 1, row * 2 + 2]):
-
-        with col.expander(f"📞 Дзвінок {idx}", expanded=False):
-
-            audio_url = st.text_input("Посилання на аудіо", key=f"url_{idx}")
-
-            qa_manager = st.selectbox(
-                "QA менеджер",
-                qa_managers_list,
-                key=f"qa_{idx}"
-            )
-
-            ret_manager = st.text_input("Менеджер RET", key=f"ret_{idx}")
-
-            client_id = st.text_input("ID клієнта", key=f"client_{idx}")
-
-            call_date = st.text_input(
-                "Дата дзвінка (ДД-ММ-РРРР)",
-                key=f"date_{idx}"
-            )
-
-            bonus_check = st.selectbox(
-                "Бонус",
-                ["правильно нараховано", "помилково нараховано", "не потрібно"],
-                key=f"bonus_{idx}"
-            )
-
-            repeat_call = st.selectbox(
-                "Повторний дзвінок",
-                [
-                    "так, був протягом години",
-                    "так, був протягом 3 годин",
-                    "ні, не було"
-                ],
-                key=f"repeat_{idx}"
-            )
-
-            manager_comment = st.text_area(
-                "Коментар менеджера",
-                height=80,
-                key=f"comment_{idx}"
-            )
-
-            speech_score = st.selectbox(
-                "Якість мовлення (ручна оцінка)",
-                [2.5, 0],
-                key=f"speech_{idx}"
-            )
-
-            calls.append({
-                "url": audio_url,
-                "qa_manager": qa_manager,
-                "ret_manager": ret_manager,
-                "client_id": client_id,
-                "call_date": call_date,
-                "check_date": check_date.strftime("%d-%m-%Y"),
-                "bonus_check": bonus_check,
-                "repeat_call": repeat_call,
-                "manager_comment": manager_comment,
-                "speech_score": speech_score
-            })
-
-
 # ---------------- TRANSCRIPTION ----------------
 
 def transcribe_audio(audio_url):
@@ -211,8 +125,7 @@ def transcribe_audio(audio_url):
         "language": "uk",
         "diarize": "true",
         "utterances": "true",
-        "punctuate": "true",
-        "smart_format": "true"
+        "punctuate": "true"
     }
 
     headers = {"Authorization": f"Token {DEEPGRAM_API_KEY}"}
@@ -255,6 +168,34 @@ def transcribe_audio(audio_url):
     return "\n".join(dialogue)
 
 
+# ---------------- COMMENT GENERATION ----------------
+
+def generate_comment(dialogue):
+
+    prompt = f"""
+Проаналізуй розмову менеджера з клієнтом.
+
+1. Дай коротке резюме дзвінка.
+2. Вкажи сильні сторони менеджера.
+3. Дай 2-3 конкретні поради, як покращити комунікацію.
+
+Розмова:
+
+{dialogue}
+"""
+
+    response = client.chat.completions.create(
+        model="gpt-4.1",
+        temperature=0.2,
+        messages=[
+            {"role": "system", "content": "Ти QA експерт контакт-центру."},
+            {"role": "user", "content": prompt}
+        ]
+    )
+
+    return response.choices[0].message.content.strip()
+
+
 # ---------------- SCORING ----------------
 
 def score_call(meta):
@@ -275,9 +216,56 @@ def score_call(meta):
     "CRM-картка":5,
     "Робота із запереченнями":10,
     "Зливання клієнта":15
+
     }
 
     return scores
+
+
+# ---------------- UI ----------------
+
+st.title("🎧 QA-10: Аналіз дзвінків")
+
+check_date = st.date_input("Дата перевірки", datetime.today())
+
+qa_managers_list = [
+    "Аліна Пронь",
+    "Дар'я Трефілова",
+    "Надія Татаренко",
+    "Анастасія Собакіна",
+    "Владимира Балховська",
+    "Діана Батрак",
+    "Руслана Каленіченко",
+    "Шутов Олексій"
+]
+
+calls = []
+
+for i in range(5):
+
+    with st.expander(f"📞 Дзвінок {i+1}"):
+
+        audio_url = st.text_input("Посилання на аудіо", key=f"url_{i}")
+
+        qa_manager = st.selectbox("QA менеджер", qa_managers_list, key=f"qa_{i}")
+
+        ret_manager = st.text_input("Менеджер RET", key=f"ret_{i}")
+
+        client_id = st.text_input("ID клієнта", key=f"client_{i}")
+
+        call_date = st.text_input("Дата дзвінка", key=f"date_{i}")
+
+        speech_score = st.selectbox("Якість мовлення", [2.5, 0], key=f"speech_{i}")
+
+        calls.append({
+            "url": audio_url,
+            "qa_manager": qa_manager,
+            "ret_manager": ret_manager,
+            "client_id": client_id,
+            "call_date": call_date,
+            "check_date": check_date.strftime("%d-%m-%Y"),
+            "speech_score": speech_score
+        })
 
 
 # ---------------- ANALYSIS ----------------
@@ -289,26 +277,26 @@ if st.button("Запустити аналіз"):
 
     st.session_state["results"].clear()
 
-    for i, call in enumerate(calls):
+    for call in calls:
 
         if not call["url"]:
             continue
 
-        st.write(f"⏳ Обробка дзвінка {i+1}...")
-
         transcript = transcribe_audio(call["url"])
 
         if not transcript:
-            st.warning("Не вдалося отримати транскрипт")
             continue
 
         scores = score_call(call)
+
+        comment = generate_comment(transcript)
 
         write_to_google_sheet(call, scores)
 
         st.session_state["results"].append({
             "meta": call,
-            "scores": scores
+            "scores": scores,
+            "comment": comment
         })
 
 
@@ -326,7 +314,11 @@ for i, res in enumerate(st.session_state["results"]):
 
         total_score = format_score(sum(res["scores"].values()))
 
-        st.markdown(f"**Загальний бал:** {total_score}")
+        st.markdown(f"### Загальний бал: {total_score}")
+
+        st.markdown("### Коментар QA")
+
+        st.write(res["comment"])
 
 
 # ---------------- EXPORT EXCEL ----------------
@@ -348,11 +340,18 @@ if st.session_state["results"]:
 
             scores_df["Оцінка"] = scores_df["Оцінка"].apply(format_score)
 
-            scores_df.to_excel(
+            scores_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=len(meta_df)+2)
+
+            comment_df = pd.DataFrame(
+                [["Коментар", res["comment"]]],
+                columns=["Поле","Значення"]
+            )
+
+            comment_df.to_excel(
                 writer,
                 index=False,
                 sheet_name=sheet_name,
-                startrow=len(meta_df)+2
+                startrow=len(meta_df)+len(scores_df)+4
             )
 
     xls.seek(0)
