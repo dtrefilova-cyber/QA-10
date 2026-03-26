@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import requests
-import json
-import re
 import gspread
 from google.oauth2.service_account import Credentials
 from io import BytesIO
@@ -20,6 +18,10 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 def format_score(x):
     return f"{float(x):.1f}"
+
+
+def format_score_sheet(x):
+    return format_score(x).replace(".", ",")
 
 
 # ---------------- GOOGLE SHEETS ----------------
@@ -58,13 +60,12 @@ CRITERIA_ROWS = {
 "Зливання клієнта": 23
 }
 
-META_ROWS = {
 
+META_ROWS = {
 "call_date": 1,
 "qa_manager": 2,
 "client_id": 3,
 "check_date": 4
-
 }
 
 
@@ -103,7 +104,11 @@ def write_to_google_sheet(meta, scores):
 
                 row = CRITERIA_ROWS[criterion]
 
-                sheet.update_cell(row, column, format_score(score))
+                sheet.update_cell(
+                    row,
+                    column,
+                    format_score_sheet(score)
+                )
 
     except Exception as e:
 
@@ -168,18 +173,18 @@ def transcribe_audio(audio_url):
     return "\n".join(dialogue)
 
 
-# ---------------- COMMENT GENERATION ----------------
+# ---------------- COMMENT ----------------
 
 def generate_comment(dialogue):
 
     prompt = f"""
-Проаналізуй розмову менеджера з клієнтом.
+Проаналізуй дзвінок менеджера.
 
-1. Дай коротке резюме дзвінка.
-2. Вкажи сильні сторони менеджера.
-3. Дай 2-3 конкретні поради, як покращити комунікацію.
+Напиши короткий коментар (2-3 речення):
+1. коротке резюме дзвінка
+2. 1 порада менеджеру
 
-Розмова:
+Без списків.
 
 {dialogue}
 """
@@ -229,43 +234,55 @@ st.title("🎧 QA-10: Аналіз дзвінків")
 check_date = st.date_input("Дата перевірки", datetime.today())
 
 qa_managers_list = [
-    "Аліна Пронь",
-    "Дар'я Трефілова",
-    "Надія Татаренко",
-    "Анастасія Собакіна",
-    "Владимира Балховська",
-    "Діана Батрак",
-    "Руслана Каленіченко",
-    "Шутов Олексій"
+    "Аліна",
+    "Дар'я",
+    "Надія",
+    "Анастасія",
+    "Владимира",
+    "Діана",
+    "Руслана",
+    "Олексій"
 ]
 
 calls = []
 
-for i in range(5):
+for row in range(5):
 
-    with st.expander(f"📞 Дзвінок {i+1}"):
+    col1, col2 = st.columns(2)
 
-        audio_url = st.text_input("Посилання на аудіо", key=f"url_{i}")
+    for col, idx in zip([col1, col2], [row * 2 + 1, row * 2 + 2]):
 
-        qa_manager = st.selectbox("QA менеджер", qa_managers_list, key=f"qa_{i}")
+        with col.expander(f"📞 Дзвінок {idx}", expanded=False):
 
-        ret_manager = st.text_input("Менеджер RET", key=f"ret_{i}")
+            audio_url = st.text_input("Посилання на аудіо", key=f"url_{idx}")
 
-        client_id = st.text_input("ID клієнта", key=f"client_{i}")
+            qa_manager = st.selectbox(
+                "QA менеджер",
+                qa_managers_list,
+                key=f"qa_{idx}"
+            )
 
-        call_date = st.text_input("Дата дзвінка", key=f"date_{i}")
+            ret_manager = st.text_input("Менеджер RET", key=f"ret_{idx}")
 
-        speech_score = st.selectbox("Якість мовлення", [2.5, 0], key=f"speech_{i}")
+            client_id = st.text_input("ID клієнта", key=f"client_{idx}")
 
-        calls.append({
-            "url": audio_url,
-            "qa_manager": qa_manager,
-            "ret_manager": ret_manager,
-            "client_id": client_id,
-            "call_date": call_date,
-            "check_date": check_date.strftime("%d-%m-%Y"),
-            "speech_score": speech_score
-        })
+            call_date = st.text_input("Дата дзвінка", key=f"date_{idx}")
+
+            speech_score = st.selectbox(
+                "Якість мовлення",
+                [2.5, 0],
+                key=f"speech_{idx}"
+            )
+
+            calls.append({
+                "url": audio_url,
+                "qa_manager": qa_manager,
+                "ret_manager": ret_manager,
+                "client_id": client_id,
+                "call_date": call_date,
+                "check_date": check_date.strftime("%d-%m-%Y"),
+                "speech_score": speech_score
+            })
 
 
 # ---------------- ANALYSIS ----------------
@@ -340,7 +357,12 @@ if st.session_state["results"]:
 
             scores_df["Оцінка"] = scores_df["Оцінка"].apply(format_score)
 
-            scores_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=len(meta_df)+2)
+            scores_df.to_excel(
+                writer,
+                index=False,
+                sheet_name=sheet_name,
+                startrow=len(meta_df)+2
+            )
 
             comment_df = pd.DataFrame(
                 [["Коментар", res["comment"]]],
