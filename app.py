@@ -178,36 +178,12 @@ def transcribe_audio(audio_url):
         return None
 
 
-# ---------------- SEGMENTS ----------------
-
-def extract_segments(dialogue):
-
-    lines = dialogue.split("\n")
-
-    intro = "\n".join(lines[:4])
-    middle = "\n".join(lines[4:-4])
-    ending = "\n".join(lines[-4:])
-
-    return intro, middle, ending
-
-
 # ---------------- FEATURE EXTRACTION ----------------
 
 def extract_features(dialogue):
 
-    intro, middle, ending = extract_segments(dialogue)
-
     prompt = f"""
 Проаналізуй дзвінок менеджера.
-
-Початок:
-{intro}
-
-Середина:
-{middle}
-
-Кінець:
-{ending}
 
 Поверни JSON:
 
@@ -222,6 +198,8 @@ def extract_features(dialogue):
 "followup_type": "none / offer / day / exact_time",
 "objection_detected": true/false
 }}
+
+{dialogue}
 """
 
     response = client.chat.completions.create(
@@ -375,11 +353,7 @@ for row in range(5):
 
             manager_comment = st.text_area("Коментар менеджера",key=f"comment_{idx}")
 
-            speech_score = st.selectbox(
-                "Якість мовлення",
-                [2.5,0],
-                key=f"speech_{idx}"
-            )
+            speech_score = st.selectbox("Якість мовлення",[2.5,0],key=f"speech_{idx}")
 
             calls.append({
                 "url":audio_url,
@@ -398,8 +372,6 @@ for row in range(5):
 status = st.empty()
 progress = st.progress(0)
 
-
-# ---------------- ANALYSIS ----------------
 
 if st.button("Запустити аналіз"):
 
@@ -465,7 +437,7 @@ if "results" in st.session_state:
 
 # ---------------- EXPORT ----------------
 
-if "results" in st.session_state:
+if "results" in st.session_state and len(st.session_state["results"]) > 0:
 
     buffer = BytesIO()
 
