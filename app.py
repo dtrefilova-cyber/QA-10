@@ -40,8 +40,6 @@ def connect_google():
     return gspread.authorize(creds)
 
 
-# ---------------- TABLE STRUCTURE ----------------
-
 META_ROWS = {
     "call_date": 1,
     "qa_manager": 2,
@@ -84,18 +82,15 @@ def find_next_column(sheet):
     return len(row) + 1
 
 
-# ---------------- FIND MANAGER TABLE ----------------
+# ---------------- FIND TABLE ----------------
 
 def find_manager_sheet(client, manager_name):
 
-    files = client.openall()
-
     manager_name = manager_name.lower().strip()
 
-    for file in files:
+    for file in client.openall():
 
         if manager_name in file.title.lower():
-
             return file
 
     return None
@@ -144,9 +139,6 @@ def write_to_google_sheet(client, meta, scores):
 
 def transcribe_audio(audio_url):
 
-    if not audio_url:
-        return None
-
     url = "https://api.deepgram.com/v1/listen"
 
     params = {
@@ -170,9 +162,6 @@ def transcribe_audio(audio_url):
 
     result = response.json()
 
-    if "results" not in result:
-        return None
-
     dialogue = []
 
     for u in result["results"]["utterances"]:
@@ -192,8 +181,8 @@ def generate_comment(dialogue):
 Проаналізуй дзвінок менеджера.
 
 Напиши короткий коментар (2-3 речення):
-1 коротке резюме дзвінка
-1 порада менеджеру
+• коротке резюме дзвінка
+• одну рекомендацію менеджеру
 
 {dialogue}
 """
@@ -284,25 +273,36 @@ for row in range(5):
             })
 
 
-# ---------------- ANALYSIS ----------------
+# ---------------- STATUS ----------------
 
-if "results" not in st.session_state:
-    st.session_state["results"] = []
+status = st.empty()
+progress = st.progress(0)
+
+
+# ---------------- ANALYSIS ----------------
 
 if st.button("Запустити аналіз"):
 
-    st.session_state["results"].clear()
+    status.info("Аналіз запущено...")
+
+    st.session_state["results"] = []
 
     google_client = connect_google()
 
-    for call in calls:
+    total = len([c for c in calls if c["url"]])
+    done = 0
+
+    for i, call in enumerate(calls):
 
         if not call["url"]:
             continue
 
+        status.write(f"Аналіз дзвінка {i+1}")
+
         transcript = transcribe_audio(call["url"])
 
         if not transcript:
+            st.warning("Не вдалося отримати транскрипцію")
             continue
 
         scores = score_call(call)
@@ -317,31 +317,38 @@ if st.button("Запустити аналіз"):
             "comment":comment
         })
 
+        done += 1
+        progress.progress(done/total if total else 0)
+
+    status.success("Аналіз готовий")
+
 
 # ---------------- RESULTS ----------------
 
-for i,res in enumerate(st.session_state["results"]):
+if "results" in st.session_state:
 
-    with st.expander(f"📊 Результат дзвінка {i+1}", expanded=True):
+    for i,res in enumerate(st.session_state["results"]):
 
-        df = pd.DataFrame(res["scores"].items(),columns=["Критерій","Оцінка"])
+        with st.expander(f"📊 Результат дзвінка {i+1}", expanded=True):
 
-        df["Оцінка"] = df["Оцінка"].apply(format_score)
+            df = pd.DataFrame(res["scores"].items(),columns=["Критерій","Оцінка"])
 
-        st.table(df)
+            df["Оцінка"] = df["Оцінка"].apply(format_score)
 
-        total = format_score(sum(res["scores"].values()))
+            st.table(df)
 
-        st.markdown(f"### Загальний бал: {total}")
+            total = format_score(sum(res["scores"].values()))
 
-        st.markdown("### Коментар QA")
+            st.markdown(f"### Загальний бал: {total}")
 
-        st.write(res["comment"])
+            st.markdown("### Коментар QA")
+
+            st.write(res["comment"])
 
 
-# ---------------- EXCEL EXPORT ----------------
+# ---------------- EXPORT ----------------
 
-if st.session_state["results"]:
+if "results" in st.session_state and st.session_state["results"]:
 
     buffer = BytesIO()
 
