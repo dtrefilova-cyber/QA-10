@@ -9,13 +9,14 @@ from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
 
+
 DEEPGRAM_API_KEY = st.secrets["DEEPGRAM_API_KEY"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 
-# ---------------- GOOGLE ----------------
+# ---------- GOOGLE ----------
 
 def connect_google():
 
@@ -33,14 +34,15 @@ def connect_google():
 
 
 META_ROWS = {
-    "call_date": 1,
-    "qa_manager": 2,
-    "client_id": 3,
-    "check_date": 4
+"call_date":1,
+"qa_manager":2,
+"client_id":3,
+"check_date":4
 }
 
 
 CRITERIA_ROWS = {
+
 "Привітання":5,
 "Дружелюбне питання / Мета дзвінка":6,
 "Спроба продовжити розмову":7,
@@ -58,120 +60,96 @@ CRITERIA_ROWS = {
 }
 
 
-def find_next_column(sheet):
+def write_to_google_sheet(client,meta,scores):
 
-    row = sheet.row_values(META_ROWS["client_id"])
+    try:
 
-    for i,v in enumerate(row,start=1):
-        if v=="":
-            return i
+        spreadsheet=None
 
-    return len(row)+1
+        for f in client.openall():
+            if meta["ret_manager"].lower() in f.title.lower():
+                spreadsheet=f
+                break
 
+        if not spreadsheet:
+            return
 
-def find_manager_sheet(client, manager_name):
+        sheet=spreadsheet.sheet1
+        column=len(sheet.row_values(1))+1
 
-    manager_name=manager_name.lower().strip()
+        cells=[]
 
-    for file in client.openall():
+        cells.append(gspread.Cell(META_ROWS["call_date"],column,meta["call_date"]))
+        cells.append(gspread.Cell(META_ROWS["qa_manager"],column,meta["qa_manager"]))
+        cells.append(gspread.Cell(META_ROWS["client_id"],column,meta["client_id"]))
+        cells.append(gspread.Cell(META_ROWS["check_date"],column,meta["check_date"]))
 
-        if manager_name in file.title.lower():
-            return file
+        for k,v in scores.items():
 
-    return None
+            if k in CRITERIA_ROWS:
+                cells.append(gspread.Cell(CRITERIA_ROWS[k],column,float(v)))
 
+        sheet.update_cells(cells)
 
-def write_to_google_sheet(client, meta, scores):
-
-    spreadsheet=find_manager_sheet(client, meta["ret_manager"])
-
-    if not spreadsheet:
-        return
-
-    sheet=spreadsheet.sheet1
-    column=find_next_column(sheet)
-
-    cells=[]
-
-    cells.append(gspread.Cell(META_ROWS["call_date"],column,meta["call_date"]))
-    cells.append(gspread.Cell(META_ROWS["qa_manager"],column,meta["qa_manager"]))
-    cells.append(gspread.Cell(META_ROWS["client_id"],column,meta["client_id"]))
-    cells.append(gspread.Cell(META_ROWS["check_date"],column,meta["check_date"]))
-
-    for criterion,score in scores.items():
-
-        if criterion in CRITERIA_ROWS:
-
-            row=CRITERIA_ROWS[criterion]
-            cells.append(gspread.Cell(row,column,float(score)))
-
-    sheet.update_cells(cells)
+    except:
+        pass
 
 
-# ---------------- TRANSCRIPTION ----------------
+# ---------- TRANSCRIBE ----------
 
 def transcribe_audio(url):
-
-    dg_url="https://api.deepgram.com/v1/listen"
 
     headers={"Authorization":f"Token {DEEPGRAM_API_KEY}"}
 
     params={
         "model":"nova-2",
         "language":"uk",
+        "punctuate":True,
         "diarize":True,
-        "utterances":True,
-        "punctuate":True
+        "utterances":True
     }
 
-    response=requests.post(
-        dg_url,
+    r=requests.post(
+        "https://api.deepgram.com/v1/listen",
         headers=headers,
         params=params,
         json={"url":url}
     )
 
-    if response.status_code!=200:
-        return None
+    if r.status_code!=200:
+        return ""
 
-    data=response.json()
+    data=r.json()
 
     try:
 
-        dialogue=[]
-        current=None
-        text=""
+        if "utterances" in data["results"]:
 
-        for u in data["results"]["utterances"]:
+            lines=[]
 
-            speaker="Менеджер" if u["speaker"]==0 else "Клієнт"
+            for u in data["results"]["utterances"]:
 
-            if speaker==current:
-                text+=" "+u["transcript"]
+                speaker="Менеджер" if u["speaker"]==0 else "Клієнт"
+                lines.append(f"{speaker}: {u['transcript']}")
 
-            else:
+            return "\n".join(lines)
 
-                if current:
-                    dialogue.append(f"{current}: {text}")
+        else:
 
-                current=speaker
-                text=u["transcript"]
-
-        if text:
-            dialogue.append(f"{current}: {text}")
-
-        return "\n".join(dialogue)
+            return data["results"]["channels"][0]["alternatives"][0]["transcript"]
 
     except:
-        return None
+        return ""
 
 
-# ---------------- GPT FEATURES ----------------
+# ---------- GPT FEATURES ----------
 
 def extract_features(dialogue):
 
-    prompt=f"""
-Проаналізуй дзвінок менеджера.
+    try:
+
+        prompt=f"""
+Проаналізуй дзвінок.
 
 Поверни JSON:
 
@@ -188,62 +166,56 @@ def extract_features(dialogue):
 {dialogue}
 """
 
-    r=client.chat.completions.create(
-        model="gpt-4.1",
-        temperature=0,
-        messages=[
-            {"role":"system","content":"Ти система аналізу дзвінків"},
-            {"role":"user","content":prompt}
-        ]
-    )
+        r=client.chat.completions.create(
+            model="gpt-4.1",
+            temperature=0,
+            messages=[
+                {"role":"system","content":"Ти система аналізу дзвінків"},
+                {"role":"user","content":prompt}
+            ]
+        )
 
-    text=r.choices[0].message.content
+        txt=r.choices[0].message.content
 
-    m=re.search(r"\{.*\}",text,re.S)
+        m=re.search(r"\{.*\}",txt,re.S)
 
-    if m:
-        return json.loads(m.group())
+        if m:
+            return json.loads(m.group())
+
+    except:
+        pass
 
     return {}
 
 
-# ---------------- COMMENT ----------------
+# ---------- COMMENT ----------
 
 def generate_comment(dialogue):
 
-    prompt=f"""
-Коротко підсумуй дзвінок менеджера.
+    try:
 
-1-2 речення: сильна сторона і рекомендація.
+        r=client.chat.completions.create(
+            model="gpt-4.1",
+            temperature=0.3,
+            messages=[
+                {"role":"system","content":"Ти QA-аналітик"},
+                {"role":"user","content":dialogue}
+            ]
+        )
 
-{dialogue}
-"""
+        return r.choices[0].message.content
 
-    r=client.chat.completions.create(
-        model="gpt-4.1",
-        temperature=0.3,
-        messages=[
-            {"role":"system","content":"Ти QA-аналітик"},
-            {"role":"user","content":prompt}
-        ]
-    )
-
-    return r.choices[0].message.content
+    except:
+        return ""
 
 
-# ---------------- SCORING ----------------
+# ---------- SCORING ----------
 
 def score_call(f,meta):
 
     scores={}
 
-    if f.get("manager_introduced_self") and f.get("client_name_used"):
-        scores["Привітання"]=5
-    elif f.get("manager_introduced_self") or f.get("client_name_used"):
-        scores["Привітання"]=2.5
-    else:
-        scores["Привітання"]=0
-
+    scores["Привітання"]=5 if f.get("manager_introduced_self") else 0
     scores["Дружелюбне питання / Мета дзвінка"]=2.5
     scores["Спроба продовжити розмову"]=5 if f.get("manager_active") else 0
     scores["Спроба презентації"]=5 if f.get("presentation_detected") else 0
@@ -278,9 +250,9 @@ def score_call(f,meta):
     return scores
 
 
-# ---------------- UI ----------------
+# ---------- UI ----------
 
-st.title("🎧 QA-10: Аналіз дзвінків")
+st.title("🎧 QA-10")
 
 check_date=st.date_input("Дата перевірки",datetime.today())
 
@@ -303,13 +275,13 @@ for row in range(5):
 
     for col,idx in zip([c1,c2],[row*2+1,row*2+2]):
 
-        with col.expander(f"📞 Дзвінок {idx}"):
+        with col.expander(f"Дзвінок {idx}"):
 
-            url=st.text_input("Посилання на аудіо",key=f"url_{idx}")
-            qa=st.selectbox("QA менеджер",qa_list,key=f"qa_{idx}")
-            ret=st.text_input("Менеджер RET",key=f"ret_{idx}")
-            cid=st.text_input("ID клієнта",key=f"client_{idx}")
-            date=st.text_input("Дата дзвінка",key=f"date_{idx}")
+            url=st.text_input("Аудіо",key=f"url_{idx}")
+            qa=st.selectbox("QA",qa_list,key=f"qa_{idx}")
+            ret=st.text_input("RET",key=f"ret_{idx}")
+            cid=st.text_input("ID",key=f"id_{idx}")
+            date=st.text_input("Дата",key=f"date_{idx}")
 
             bonus=st.selectbox(
                 "Бонус",
@@ -323,8 +295,8 @@ for row in range(5):
                 key=f"repeat_{idx}"
             )
 
-            comment=st.text_area("Коментар менеджера",key=f"comment_{idx}")
-            speech=st.selectbox("Якість мовлення",[2.5,0],key=f"speech_{idx}")
+            comment=st.text_area("Коментар",key=f"comment_{idx}")
+            speech=st.selectbox("Мовлення",[2.5,0],key=f"speech_{idx}")
 
             calls.append({
                 "url":url,
@@ -341,22 +313,16 @@ for row in range(5):
 
 
 status=st.empty()
-progress=st.progress(0)
-
-
-# ---------------- ANALYSIS ----------------
 
 if "results" not in st.session_state:
     st.session_state["results"]=[]
+
 
 if st.button("Запустити аналіз"):
 
     st.session_state["results"].clear()
 
     google_client=connect_google()
-
-    total=len([c for c in calls if c["url"]])
-    done=0
 
     for i,call in enumerate(calls):
 
@@ -367,11 +333,10 @@ if st.button("Запустити аналіз"):
 
         transcript=transcribe_audio(call["url"])
 
-        if not transcript:
-            continue
-
         features=extract_features(transcript)
+
         scores=score_call(features,call)
+
         comment=generate_comment(transcript)
 
         write_to_google_sheet(google_client,call,scores)
@@ -382,31 +347,26 @@ if st.button("Запустити аналіз"):
             "comment":comment
         })
 
-        done+=1
-        progress.progress(done/total)
-
     status.success("Аналіз завершено")
 
 
-# ---------------- RESULTS ----------------
+# ---------- RESULTS ----------
 
 if st.session_state["results"]:
 
     for i,res in enumerate(st.session_state["results"]):
 
-        with st.expander(f"📊 Результат дзвінка {i+1}",expanded=True):
+        df=pd.DataFrame(res["scores"].items(),columns=["Критерій","Оцінка"])
+        df["Оцінка"]=df["Оцінка"].astype(float).map(lambda x:f"{x:.1f}")
 
-            df=pd.DataFrame(res["scores"].items(),columns=["Критерій","Оцінка"])
-            df["Оцінка"]=df["Оцінка"].astype(float).map(lambda x:f"{x:.1f}")
+        st.table(df)
 
-            st.table(df)
-
-            total=sum(res["scores"].values())
-            st.markdown(f"### Загальний бал: {total:.1f}")
-            st.write(res["comment"])
+        total=sum(res["scores"].values())
+        st.write(f"Загальний бал: {total:.1f}")
+        st.write(res["comment"])
 
 
-# ---------------- EXPORT ----------------
+# ---------- EXPORT ----------
 
 if st.session_state["results"]:
 
@@ -416,22 +376,18 @@ if st.session_state["results"]:
 
         for i,res in enumerate(st.session_state["results"]):
 
-            name=f"Call_{i+1}"
+            sheet=f"Call_{i+1}"
 
-            meta_df=pd.DataFrame(list(res["meta"].items()),columns=["Поле","Значення"])
-            meta_df.to_excel(writer,index=False,sheet_name=name)
+            meta=pd.DataFrame(list(res["meta"].items()),columns=["Поле","Значення"])
+            meta.to_excel(writer,index=False,sheet_name=sheet)
 
-            scores_df=pd.DataFrame(res["scores"].items(),columns=["Критерій","Оцінка"])
-            scores_df.to_excel(writer,index=False,sheet_name=name,startrow=len(meta_df)+2)
-
-            comment_df=pd.DataFrame([["Коментар",res["comment"]]],columns=["Поле","Значення"])
-            comment_df.to_excel(writer,index=False,sheet_name=name,startrow=len(meta_df)+len(scores_df)+4)
+            scores=pd.DataFrame(res["scores"].items(),columns=["Критерій","Оцінка"])
+            scores.to_excel(writer,index=False,sheet_name=sheet,startrow=len(meta)+2)
 
     buffer.seek(0)
 
     st.download_button(
-        "📥 Завантажити результати XLSX",
+        "Завантажити XLSX",
         buffer,
-        "qa_results.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        "qa_results.xlsx"
     )
