@@ -46,10 +46,9 @@ CRITERIA_ROWS = {
 "Дружелюбне питання / Мета дзвінка":6,
 "Спроба продовжити розмову":7,
 "Спроба презентації":8,
-"Домовленість про наступний контакт":9,
-"Пропозиція бонусу":10,
-"Завершення":11,
-
+"Пропозиція бонусу":9,
+"Завершення":10,
+"Домовленість про наступний контакт":11,
 "Передзвон клієнту":12,
 "Не додумувати":13,
 "Якість мовлення":14,
@@ -59,6 +58,8 @@ CRITERIA_ROWS = {
 "Зливання клієнта":18
 }
 
+
+# ---------------- GOOGLE WRITE ----------------
 
 def find_next_column(sheet):
 
@@ -117,95 +118,71 @@ def transcribe_audio(audio_url):
     if not audio_url:
         return ""
 
-    url = "https://api.deepgram.com/v1/listen"
-
-    params = {
-        "model":"nova-3",
-        "language":"uk",
-        "punctuate":True,
-        "diarize":True,
-        "utterances":True
-    }
-
-    headers = {"Authorization":f"Token {DEEPGRAM_API_KEY}"}
-
     response = requests.post(
-        url,
-        headers=headers,
-        params=params,
+        "https://api.deepgram.com/v1/listen",
+        headers={"Authorization":f"Token {DEEPGRAM_API_KEY}"},
+        params={
+            "model":"nova-3",
+            "language":"uk",
+            "punctuate":True,
+            "diarize":True,
+            "utterances":True
+        },
         json={"url":audio_url}
     )
 
     if response.status_code != 200:
         return ""
 
-    data = response.json()
+    data=response.json()
 
     try:
 
-        if "utterances" in data["results"]:
+        dialogue=[]
 
-            dialogue=[]
+        for u in data["results"]["utterances"]:
 
-            for u in data["results"]["utterances"]:
+            speaker="Менеджер" if u["speaker"]==0 else "Клієнт"
+            dialogue.append(f"{speaker}: {u['transcript']}")
 
-                speaker = "Менеджер" if u["speaker"]==0 else "Клієнт"
-                text = u["transcript"]
-
-                dialogue.append(f"{speaker}: {text}")
-
-            return "\n".join(dialogue)
-
-        else:
-
-            return data["results"]["channels"][0]["alternatives"][0]["transcript"]
+        return "\n".join(dialogue)
 
     except:
 
-        return ""
+        return data["results"]["channels"][0]["alternatives"][0]["transcript"]
 
 
 # ---------------- GPT ANALYSIS ----------------
 
 def extract_features(dialogue):
 
-    prompt = f"""
+    prompt=f"""
 Ти QA-аналітик контакт-центру.
 
 Проаналізуй дзвінок менеджера.
 
-Правила оцінювання:
+Визнач:
 
-1. Привітання
-Менеджер представився і назвав сервіс.
+1. Чи представився менеджер
+2. Чи звернувся до клієнта по імені
+3. Чи намагався продовжити розмову
+4. Чи була презентація
+5. Чи запропонував бонус
+6. Чи було коректне завершення
+7. Тип follow-up
+8. Чи було заперечення
 
-2. Використання імені клієнта
-Менеджер звернувся до клієнта по імені.
-
-3. Презентація
-Менеджер пояснив бонус або сервіс.
-
-4. Активність менеджера
-Менеджер ставить питання і намагається продовжити діалог.
-
-5. Follow-up
-none — домовленості немає  
-offer — запропонував передзвонити  
-day — домовленість на день  
-exact_time — домовленість на точний час
-
-6. Заперечення
-Клієнт висловив сумнів або відмову.
-
-Поверни ТІЛЬКИ JSON:
+Поверни JSON:
 
 {{
-"manager_introduced_self": true/false,
-"client_name_used": true/false,
-"presentation_detected": true/false,
-"manager_active": true/false,
-"followup_type": "none / offer / day / exact_time",
-"objection_detected": true/false
+"manager_introduced_self":true/false,
+"client_name_used":true/false,
+"manager_active":true/false,
+"presentation":true/false,
+"bonus":true/false,
+"closing":true/false,
+"followup":"none / offer / day / exact_time",
+"objection":true/false
 }}
 
 Дзвінок:
@@ -215,11 +192,11 @@ exact_time — домовленість на точний час
 
     try:
 
-        response = client.chat.completions.create(
+        response=client.chat.completions.create(
             model="gpt-4.1",
             temperature=0,
             messages=[
-                {"role":"system","content":"Ти система аналізу дзвінків"},
+                {"role":"system","content":"Ти QA-аналітик"},
                 {"role":"user","content":prompt}
             ]
         )
@@ -229,57 +206,21 @@ exact_time — домовленість на точний час
         match=re.search(r"\{[\s\S]*\}",text)
 
         if match:
-            features=json.loads(match.group())
-        else:
-            features={}
+            return json.loads(match.group())
 
     except:
-        features={}
+        pass
 
-    defaults={
+    return {
         "manager_introduced_self":False,
         "client_name_used":False,
-        "presentation_detected":False,
         "manager_active":False,
-        "followup_type":"none",
-        "objection_detected":False
+        "presentation":False,
+        "bonus":False,
+        "closing":False,
+        "followup":"none",
+        "objection":False
     }
-
-    for k,v in defaults.items():
-        features.setdefault(k,v)
-
-    return features
-
-
-# ---------------- COMMENT ----------------
-
-def generate_comment(dialogue):
-
-    prompt=f"""
-Коротко підсумуй дзвінок менеджера.
-
-1-2 речення:
-• сильна сторона
-• рекомендація
-
-{dialogue}
-"""
-
-    try:
-
-        response = client.chat.completions.create(
-            model="gpt-4.1",
-            temperature=0.3,
-            messages=[
-                {"role":"system","content":"Ти QA-аналітик"},
-                {"role":"user","content":prompt}
-            ]
-        )
-
-        return response.choices[0].message.content
-
-    except:
-        return ""
 
 
 # ---------------- SCORING ----------------
@@ -296,10 +237,16 @@ def score_call(f,meta):
         scores["Привітання"]=0
 
     scores["Дружелюбне питання / Мета дзвінка"]=2.5
-    scores["Спроба продовжити розмову"]=5 if f["manager_active"] else 0
-    scores["Спроба презентації"]=5 if f["presentation_detected"] else 0
 
-    follow=f["followup_type"]
+    scores["Спроба продовжити розмову"]=5 if f["manager_active"] else 0
+
+    scores["Спроба презентації"]=5 if f["presentation"] else 0
+
+    scores["Пропозиція бонусу"]=5 if f["bonus"] else 0
+
+    scores["Завершення"]=5 if f["closing"] else 0
+
+    follow=f["followup"]
 
     if follow=="exact_time":
         scores["Домовленість про наступний контакт"]=10
@@ -326,7 +273,7 @@ def score_call(f,meta):
 
     scores["CRM-картка"]=5 if meta["manager_comment"] else 0
 
-    scores["Робота із запереченнями"]=10 if not f["objection_detected"] else 5
+    scores["Робота із запереченнями"]=10 if not f["objection"] else 5
 
     scores["Зливання клієнта"]=15
 
@@ -335,74 +282,73 @@ def score_call(f,meta):
 
 def format_score(x):
     return f"{float(x):.1f}"
-
-
-# ---------------- UI ----------------
+    # ---------------- UI ----------------
 
 st.title("🎧 QA-10")
 
 check_date = st.date_input("Дата перевірки", datetime.today())
 
-qa_list=[
-"Аліна",
-"Дар'я",
-"Надя",
-"Настя",
-"Владимира",
-"Діана",
-"Руслана",
-"Олексій"
+qa_list = [
+    "Аліна",
+    "Дар'я",
+    "Надя",
+    "Настя",
+    "Владимира",
+    "Діана",
+    "Руслана",
+    "Олексій"
 ]
 
-calls=[]
+calls = []
 
 for row in range(5):
 
-    c1,c2=st.columns(2)
+    c1, c2 = st.columns(2)
 
-    for col,idx in zip([c1,c2],[row*2+1,row*2+2]):
+    for col, idx in zip([c1, c2], [row*2+1, row*2+2]):
 
         with col.expander(f"📞 Дзвінок {idx}"):
 
-            url=st.text_input("Посилання на дзвінок",key=f"url_{idx}")
-            qa=st.selectbox("QA менеджер",qa_list,key=f"qa_{idx}")
-            ret=st.text_input("Менеджер RET",key=f"ret_{idx}")
-            cid=st.text_input("ID клієнта",key=f"id_{idx}")
-            date=st.text_input("Дата дзвінка",key=f"date_{idx}")
+            url = st.text_input("Посилання на дзвінок", key=f"url_{idx}")
+            qa = st.selectbox("QA менеджер", qa_list, key=f"qa_{idx}")
+            ret = st.text_input("Менеджер RET", key=f"ret_{idx}")
+            cid = st.text_input("ID клієнта", key=f"id_{idx}")
+            date = st.text_input("Дата дзвінка", key=f"date_{idx}")
 
-            bonus=st.selectbox(
+            bonus = st.selectbox(
                 "Бонус",
-                ["правильно нараховано","помилково нараховано","не потрібно"],
+                ["правильно нараховано", "помилково нараховано", "не потрібно"],
                 key=f"bonus_{idx}"
             )
 
-            repeat=st.selectbox(
+            repeat = st.selectbox(
                 "Повторний дзвінок",
-                ["так, був протягом години","так, був протягом 3 годин","ні, не було"],
+                ["так, був протягом години", "так, був протягом 3 годин", "ні, не було"],
                 key=f"repeat_{idx}"
             )
 
-            comment=st.text_area("Коментар з картки",key=f"comment_{idx}")
-            speech=st.selectbox("Оцінка мови",[2.5,0],key=f"speech_{idx}")
+            comment = st.text_area("Коментар з картки", key=f"comment_{idx}")
+
+            speech = st.selectbox("Оцінка мови", [2.5, 0], key=f"speech_{idx}")
 
             calls.append({
-                "url":url,
-                "qa_manager":qa,
-                "ret_manager":ret,
-                "client_id":cid,
-                "call_date":date,
-                "check_date":check_date.strftime("%d-%m-%Y"),
-                "bonus_check":bonus,
-                "repeat_call":repeat,
-                "manager_comment":comment,
-                "speech_score":speech
+                "url": url,
+                "qa_manager": qa,
+                "ret_manager": ret,
+                "client_id": cid,
+                "call_date": date,
+                "check_date": check_date.strftime("%d-%m-%Y"),
+                "bonus_check": bonus,
+                "repeat_call": repeat,
+                "manager_comment": comment,
+                "speech_score": speech
             })
 
 
 if "results" not in st.session_state:
-    st.session_state["results"]=[]
+    st.session_state["results"] = []
 
-status=st.empty()
+status = st.empty()
 
 
 # ---------------- ANALYSIS ----------------
@@ -413,7 +359,7 @@ if st.button("Запустити аналіз"):
 
     google_client = connect_google()
 
-    for i,call in enumerate(calls):
+    for i, call in enumerate(calls):
 
         if not call["url"]:
             continue
@@ -424,16 +370,16 @@ if st.button("Запустити аналіз"):
 
         features = extract_features(transcript)
 
-        scores = score_call(features,call)
+        scores = score_call(features, call)
 
         comment = generate_comment(transcript)
 
-        write_to_google_sheet(google_client,call,scores)
+        write_to_google_sheet(google_client, call, scores)
 
         st.session_state["results"].append({
-            "meta":call,
-            "scores":scores,
-            "comment":comment
+            "meta": call,
+            "scores": scores,
+            "comment": comment
         })
 
     status.success("Аналіз завершено")
@@ -441,18 +387,19 @@ if st.button("Запустити аналіз"):
 
 # ---------------- RESULTS ----------------
 
-for i,res in enumerate(st.session_state["results"]):
+for i, res in enumerate(st.session_state["results"]):
 
-    with st.expander(f"📊 Результат дзвінка {i+1}",expanded=True):
+    with st.expander(f"📊 Результат дзвінка {i+1}", expanded=True):
 
-        df=pd.DataFrame(res["scores"].items(),columns=["Критерій","Оцінка"])
-        df["Оцінка"]=df["Оцінка"].apply(format_score)
+        df = pd.DataFrame(res["scores"].items(), columns=["Критерій", "Оцінка"])
+        df["Оцінка"] = df["Оцінка"].apply(format_score)
 
         st.table(df)
 
         total_score = f"{sum(res['scores'].values()):.1f}"
 
         st.markdown(f"**Загальний бал:** {total_score}")
+
         st.markdown("### Коментар")
         st.write(res["comment"])
 
@@ -461,26 +408,56 @@ for i,res in enumerate(st.session_state["results"]):
 
 if st.session_state["results"]:
 
-    xls=BytesIO()
+    xls = BytesIO()
 
-    with pd.ExcelWriter(xls,engine="openpyxl") as writer:
+    with pd.ExcelWriter(xls, engine="openpyxl") as writer:
 
-        for i,res in enumerate(st.session_state["results"]):
+        for i, res in enumerate(st.session_state["results"]):
 
-            sheet=f"Call_{i+1}"
+            sheet = f"Call_{i+1}"
 
-            meta_df=pd.DataFrame(list(res["meta"].items()),columns=["Поле","Значення"])
-            meta_df.to_excel(writer,index=False,sheet_name=sheet)
+            meta_df = pd.DataFrame(
+                list(res["meta"].items()),
+                columns=["Поле", "Значення"]
+            )
 
-            scores_df=pd.DataFrame(res["scores"].items(),columns=["Критерій","Оцінка"])
-            scores_df["Оцінка"]=scores_df["Оцінка"].apply(format_score)
+            meta_df.to_excel(
+                writer,
+                index=False,
+                sheet_name=sheet
+            )
 
-            scores_df.to_excel(writer,index=False,sheet_name=sheet,startrow=len(meta_df)+2)
+            scores_df = pd.DataFrame(
+                res["scores"].items(),
+                columns=["Критерій", "Оцінка"]
+            )
+
+            scores_df["Оцінка"] = scores_df["Оцінка"].apply(format_score)
+
+            scores_df.to_excel(
+                writer,
+                index=False,
+                sheet_name=sheet,
+                startrow=len(meta_df) + 2
+            )
+
+            comment_df = pd.DataFrame(
+                [["Коментар", res["comment"]]],
+                columns=["Поле", "Значення"]
+            )
+
+            comment_df.to_excel(
+                writer,
+                index=False,
+                sheet_name=sheet,
+                startrow=len(meta_df) + len(scores_df) + 4
+            )
 
     xls.seek(0)
 
     st.download_button(
-        "📥 Завантажити XLSX",
+        "📥 Завантажити результати XLSX",
         xls,
-        "qa_results.xlsx"
+        "qa_results.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
