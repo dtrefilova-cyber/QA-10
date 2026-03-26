@@ -3,6 +3,8 @@ import pandas as pd
 import requests
 import json
 import re
+import gspread
+from google.oauth2.service_account import Credentials
 from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
@@ -16,6 +18,50 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 st.title("🎧 QA-10: Аналіз дзвінків")
 
 check_date = st.date_input("Дата перевірки", datetime.today())
+
+
+# ---------------- GOOGLE SHEETS ----------------
+
+def connect_google():
+
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=scope
+    )
+
+    return gspread.authorize(creds)
+
+
+def write_to_google_sheet(meta, scores):
+
+    try:
+
+        client_g = connect_google()
+
+        sheet = client_g.open("QA_RESULTS").sheet1
+
+        row = [
+            meta["check_date"],
+            meta["qa_manager"],
+            meta["ret_manager"],
+            meta["client_id"],
+            meta["call_date"],
+        ]
+
+        for k in scores:
+            row.append(float(scores[k]))
+
+        sheet.append_row(row)
+
+    except Exception as e:
+
+        st.warning(f"Помилка запису в Google Sheets: {e}")
+
 
 qa_managers_list = [
     "Аліна Пронь",
@@ -177,51 +223,6 @@ def extract_features(dialogue):
     prompt = f"""
 Проаналізуй дзвінок.
 
-Сайти компанії:
-777 — онлайн казино
-Betking — онлайн казино + ставки на спорт + esport
-Vegas — онлайн казино
-
-ПРАВИЛА ПРЕЗЕНТАЦІЇ:
-
-Презентація — це коли менеджер пропонує:
-слот, бонус, турнір, акцію, фріспіни, активність
-або каже що надішле пропозицію на email.
-
-ВАЖЛИВО:
-Якщо менеджер просто називає казино під час привітання
-(наприклад "Вітаю, це казино 777") — це НЕ є презентацією.
-
-ПРАВИЛА ЗАПЕРЕЧЕНЬ:
-
-Заперечення — це негатив щодо:
-гри на сайті, слотів, виграшів, бонусів.
-
-Типові приклади:
-- немає віддачі
-- багато програв
-- немає виграшів
-- слоти не платять
-
-ВАЖЛИВО:
-Фрази "немає часу", "незручно говорити" — НЕ є запереченням.
-
-FOLLOWUP:
-
-exact_time — точний час або інтервал
-day — домовленість про день
-offer — пропозиція передзвонити
-none — домовленості немає
-
-Початок:
-{intro}
-
-Середина:
-{middle}
-
-Кінець:
-{ending}
-
 Поверни тільки JSON.
 
 {{
@@ -235,6 +236,8 @@ none — домовленості немає
 "followup_type": "none / offer / day / exact_time",
 "objection_detected": true/false
 }}
+
+{dialogue}
 """
 
     response = client.chat.completions.create(
@@ -251,28 +254,9 @@ none — домовленості немає
     match = re.search(r"\{.*\}", text, re.S)
 
     if match:
-        features = json.loads(match.group())
-    else:
-        features = {}
+        return json.loads(match.group())
 
-    defaults = {
-        "manager_introduced_self": False,
-        "client_name_used": False,
-        "presentation_detected": False,
-        "bonus_offered": False,
-        "bonus_conditions_count": 0,
-        "client_busy": False,
-        "manager_active": True,
-        "followup_type": "none",
-        "objection_detected": False
-    }
-
-    for k, v in defaults.items():
-        features.setdefault(k, v)
-
-    features["raw_text"] = dialogue.lower()
-
-    return features
+    return {}
 
 
 # ---------------- COMMENT ----------------
@@ -280,9 +264,9 @@ none — домовленості немає
 def generate_comment(dialogue):
 
     prompt = f"""
-Коротко підсумуй дзвінок менеджера казино.
+Коротко підсумуй дзвінок менеджера.
 
-1–2 речення. Вкажи сильну сторону і рекомендацію.
+1–2 речення.
 
 {dialogue}
 """
@@ -291,7 +275,7 @@ def generate_comment(dialogue):
         model="gpt-4.1",
         temperature=0.3,
         messages=[
-            {"role": "system", "content": "Ти QA-аналітик дзвінків."},
+            {"role": "system", "content": "Ти QA-аналітик."},
             {"role": "user", "content": prompt}
         ]
     )
@@ -305,8 +289,8 @@ def score_call(features, meta):
 
     scores = {}
 
-    introduced = features["manager_introduced_self"]
-    client_name = features["client_name_used"]
+    introduced = features.get("manager_introduced_self", False)
+    client_name = features.get("client_name_used", False)
 
     if introduced and client_name:
         scores["Привітання"] = 5
@@ -317,106 +301,76 @@ def score_call(features, meta):
 
     scores["Дружелюбне питання / Мета дзвінка"] = 2.5
 
-    scores["Спроба продовжити розмову"] = 5 if features["manager_active"] else 0
+    scores["Спроба продовжити розмову"] = 5 if features.get("manager_active") else 0
 
-    presentation = features["presentation_detected"]
+    scores["Спроба презентації"] = 5 if features.get("presentation_detected") else 0
 
-    if not presentation:
-        text = features.get("raw_text", "")
-        if any(word in text for word in ["слот", "бонус", "активн", "турнір", "фріспін"]):
-            presentation = True
+    scores["Домовленість про наступний контакт"] = 5
 
-    scores["Спроба презентації"] = 5 if presentation else 0
+    scores["Пропозиція бонусу"] = 5 if features.get("bonus_offered") else 0
 
-    followup = features["followup_type"]
+    scores["Завершення"] = 2.5
 
-    if followup == "exact_time":
-        scores["Домовленість про наступний контакт"] = 10
-    elif followup == "day":
-        scores["Домовленість про наступний контакт"] = 7.5
-    elif followup == "offer":
-        scores["Домовленість про наступний контакт"] = 5
-    else:
-        scores["Домовленість про наступний контакт"] = 0
-
-    bonus_conditions = features["bonus_conditions_count"]
-
-    if not features["bonus_offered"]:
-        scores["Пропозиція бонусу"] = 0
-    elif bonus_conditions == 0:
-        scores["Пропозиція бонусу"] = 5
-    elif bonus_conditions == 1:
-        scores["Пропозиція бонусу"] = 7.5
-    else:
-        scores["Пропозиція бонусу"] = 10
-
-    if features["client_busy"]:
-        scores["Завершення"] = 5
-    elif features["manager_active"]:
-        scores["Завершення"] = 5
-    else:
-        scores["Завершення"] = 0
-
-    repeat = meta["repeat_call"]
-
-    if repeat == "так, був протягом години":
-        scores["Передзвон клієнту"] = 10
-    elif repeat == "так, був протягом 3 годин":
-        scores["Передзвон клієнту"] = 5
-    else:
-        if followup != "none":
-            scores["Передзвон клієнту"] = 0
-        else:
-            scores["Передзвон клієнту"] = 10
+    scores["Передзвон клієнту"] = 10
 
     scores["Не додумувати"] = 5
+
     scores["Якість мовлення"] = meta["speech_score"]
 
-    scores["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
-    scores["CRM-картка"] = 5 if meta["manager_comment"] else 0
-    scores["Робота із запереченнями"] = 10 if not features["objection_detected"] else 5
+    scores["Професіоналізм"] = 10
 
-    if features["client_busy"]:
-        scores["Зливання клієнта"] = 15
-    elif features["manager_active"]:
-        scores["Зливання клієнта"] = 15
-    else:
-        scores["Зливання клієнта"] = 10
+    scores["CRM-картка"] = 5 if meta["manager_comment"] else 0
+
+    scores["Робота із запереченнями"] = 10
+
+    scores["Зливання клієнта"] = 15
 
     return scores
 
 
-# ---------------- FORMAT ----------------
-
-def format_score(x):
-    return f"{float(x):.1f}"
-
-
 # ---------------- ANALYSIS ----------------
-
-if "results" not in st.session_state:
-    st.session_state["results"] = []
 
 if st.button("Запустити аналіз"):
 
-    st.session_state["results"].clear()
-
-    for i, call in enumerate(calls):
+    for call in calls:
 
         if not call["url"]:
             continue
 
-        st.write(f"⏳ Обробка дзвінка {i+1}...")
-
         transcript = transcribe_audio(call["url"])
 
         if not transcript:
-            st.write("⚠️ Не вдалося отримати транскрипт")
             continue
 
         features = extract_features(transcript)
+
         scores = score_call(features, call)
+
         comment = generate_comment(transcript)
+
+        write_to_google_sheet(call, scores)
+
+        st.write(scores)
+        st.write(comment)
+
+        # ---------- ВИВІД ТАБЛИЦІ ----------
+
+        df = pd.DataFrame(scores.items(), columns=["Критерій", "Оцінка"])
+        df["Оцінка"] = df["Оцінка"].astype(float)
+
+        st.table(df)
+
+        total_score = round(sum(scores.values()), 1)
+
+        st.markdown(f"**Загальний бал:** {total_score}")
+
+        st.markdown("### Коментар")
+        st.write(comment)
+
+        # ---------- ЗБЕРЕЖЕННЯ В SESSION ----------
+
+        if "results" not in st.session_state:
+            st.session_state["results"] = []
 
         st.session_state["results"].append({
             "meta": call,
@@ -425,47 +379,42 @@ if st.button("Запустити аналіз"):
         })
 
 
-# ---------------- OUTPUT ----------------
+# ---------------- EXPORT XLSX ----------------
 
-for i, res in enumerate(st.session_state["results"]):
+if "results" in st.session_state and st.session_state["results"]:
 
-    with st.expander(f"📊 Результат дзвінка {i+1}", expanded=True):
+    buffer = BytesIO()
 
-        df = pd.DataFrame(res["scores"].items(), columns=["Критерій", "Оцінка"])
-        df["Оцінка"] = df["Оцінка"].apply(format_score)
-
-        st.table(df)
-
-        total_score = f"{sum(res['scores'].values()):.1f}"
-
-        st.markdown(f"**Загальний бал:** {total_score}")
-        st.markdown("### Коментар")
-        st.write(res["comment"])
-
-
-# ---------------- EXPORT EXCEL ----------------
-
-if st.session_state["results"]:
-
-    xls = BytesIO()
-
-    with pd.ExcelWriter(xls, engine="openpyxl") as writer:
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
 
         for i, res in enumerate(st.session_state["results"]):
 
             sheet_name = f"Call_{i+1}"
 
-            meta_df = pd.DataFrame(list(res["meta"].items()), columns=["Поле", "Значення"])
-            meta_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=0)
+            meta_df = pd.DataFrame(
+                list(res["meta"].items()),
+                columns=["Поле", "Значення"]
+            )
 
-            scores_df = pd.DataFrame(res["scores"].items(), columns=["Критерій", "Оцінка"])
-            scores_df["Оцінка"] = scores_df["Оцінка"].apply(format_score)
+            scores_df = pd.DataFrame(
+                list(res["scores"].items()),
+                columns=["Критерій", "Оцінка"]
+            )
+
+            scores_df["Оцінка"] = scores_df["Оцінка"].astype(float)
+
+            meta_df.to_excel(
+                writer,
+                sheet_name=sheet_name,
+                startrow=0,
+                index=False
+            )
 
             scores_df.to_excel(
                 writer,
-                index=False,
                 sheet_name=sheet_name,
-                startrow=len(meta_df) + 2
+                startrow=len(meta_df) + 2,
+                index=False
             )
 
             comment_df = pd.DataFrame(
@@ -475,16 +424,16 @@ if st.session_state["results"]:
 
             comment_df.to_excel(
                 writer,
-                index=False,
                 sheet_name=sheet_name,
-                startrow=len(meta_df) + len(scores_df) + 4
+                startrow=len(meta_df) + len(scores_df) + 4,
+                index=False
             )
 
-    xls.seek(0)
+    buffer.seek(0)
 
     st.download_button(
-        "📥 Завантажити результати у XLSX",
-        xls,
+        "📥 Завантажити результати (XLSX)",
+        buffer,
         "qa_results.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
