@@ -16,6 +16,12 @@ OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 
+# ---------------- FORMAT SCORE ----------------
+
+def format_score(x):
+    return float(f"{float(x):.1f}")
+
+
 # ---------------- GOOGLE SHEETS ----------------
 
 def connect_google():
@@ -30,9 +36,7 @@ def connect_google():
         scopes=scope
     )
 
-    client = gspread.authorize(creds)
-
-    return client
+    return gspread.authorize(creds)
 
 
 CRITERIA_ROWS = {
@@ -54,6 +58,7 @@ CRITERIA_ROWS = {
 "Зливання клієнта": 23
 }
 
+
 META_ROWS = {
 
 "call_date": 1,
@@ -66,7 +71,12 @@ META_ROWS = {
 
 def find_next_column(sheet):
 
-    row = sheet.row_values(3)
+    row = sheet.row_values(META_ROWS["client_id"])
+
+    for i, value in enumerate(row, start=1):
+
+        if value == "":
+            return i
 
     return len(row) + 1
 
@@ -78,7 +88,6 @@ def write_to_google_sheet(meta, scores):
         client = connect_google()
 
         spreadsheet = client.open(meta["ret_manager"])
-
         sheet = spreadsheet.sheet1
 
         column = find_next_column(sheet)
@@ -94,11 +103,12 @@ def write_to_google_sheet(meta, scores):
 
                 row = CRITERIA_ROWS[criterion]
 
-                sheet.update_cell(row, column, score)
+                sheet.update_cell(row, column, format_score(score))
 
     except Exception as e:
 
-        st.warning(f"Не вдалося записати у Google Sheets: {e}")
+        if "200" not in str(e):
+            st.warning(f"Не вдалося записати у Google Sheets: {e}")
 
 
 # ---------------- STREAMLIT UI ----------------
@@ -245,6 +255,31 @@ def transcribe_audio(audio_url):
     return "\n".join(dialogue)
 
 
+# ---------------- SCORING ----------------
+
+def score_call(meta):
+
+    scores = {
+
+    "Привітання":5,
+    "Дружелюбне питання / Мета дзвінка":2.5,
+    "Спроба продовжити розмову":5,
+    "Спроба презентації":5,
+    "Домовленість про наступний контакт":10,
+    "Пропозиція бонусу":10,
+    "Завершення":5,
+    "Передзвон клієнту":10,
+    "Не додумувати":5,
+    "Якість мовлення":meta["speech_score"],
+    "Професіоналізм":10,
+    "CRM-картка":5,
+    "Робота із запереченнями":10,
+    "Зливання клієнта":15
+    }
+
+    return scores
+
+
 # ---------------- ANALYSIS ----------------
 
 if "results" not in st.session_state:
@@ -267,29 +302,13 @@ if st.button("Запустити аналіз"):
             st.warning("Не вдалося отримати транскрипт")
             continue
 
-        scores = {
-            "Привітання":5,
-            "Дружелюбне питання / Мета дзвінка":2.5,
-            "Спроба продовжити розмову":5,
-            "Спроба презентації":5,
-            "Домовленість про наступний контакт":10,
-            "Пропозиція бонусу":10,
-            "Завершення":5,
-            "Передзвон клієнту":10,
-            "Не додумувати":5,
-            "Якість мовлення":call["speech_score"],
-            "Професіоналізм":10,
-            "CRM-картка":5,
-            "Робота із запереченнями":10,
-            "Зливання клієнта":15
-        }
+        scores = score_call(call)
 
         write_to_google_sheet(call, scores)
 
         st.session_state["results"].append({
-            "meta":call,
-            "scores":scores,
-            "comment":""
+            "meta": call,
+            "scores": scores
         })
 
 
@@ -300,9 +319,12 @@ for i, res in enumerate(st.session_state["results"]):
     with st.expander(f"📊 Результат дзвінка {i+1}", expanded=True):
 
         df = pd.DataFrame(res["scores"].items(), columns=["Критерій","Оцінка"])
+
+        df["Оцінка"] = df["Оцінка"].apply(format_score)
+
         st.table(df)
 
-        total_score = f"{sum(res['scores'].values()):.1f}"
+        total_score = format_score(sum(res["scores"].values()))
 
         st.markdown(f"**Загальний бал:** {total_score}")
 
@@ -323,7 +345,15 @@ if st.session_state["results"]:
             meta_df.to_excel(writer, index=False, sheet_name=sheet_name)
 
             scores_df = pd.DataFrame(res["scores"].items(), columns=["Критерій","Оцінка"])
-            scores_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=6)
+
+            scores_df["Оцінка"] = scores_df["Оцінка"].apply(format_score)
+
+            scores_df.to_excel(
+                writer,
+                index=False,
+                sheet_name=sheet_name,
+                startrow=len(meta_df)+2
+            )
 
     xls.seek(0)
 
