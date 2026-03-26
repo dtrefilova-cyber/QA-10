@@ -73,7 +73,7 @@ def find_next_column(sheet):
 
 def find_manager_sheet(client, manager_name):
 
-    manager_name=manager_name.lower().strip()
+    manager_name = manager_name.lower().strip()
 
     for file in client.openall():
 
@@ -85,13 +85,13 @@ def find_manager_sheet(client, manager_name):
 
 def write_to_google_sheet(client, meta, scores):
 
-    spreadsheet=find_manager_sheet(client,meta["ret_manager"])
+    spreadsheet = find_manager_sheet(client, meta["ret_manager"])
 
     if not spreadsheet:
         return
 
-    sheet=spreadsheet.sheet1
-    column=find_next_column(sheet)
+    sheet = spreadsheet.sheet1
+    column = find_next_column(sheet)
 
     cells=[]
 
@@ -156,37 +156,9 @@ def transcribe_audio(audio_url):
 def analyze_call(dialogue,meta):
 
     prompt=f"""
-Ти QA-аналітик казино контакт-центру.
+Ти QA-аналітик контакт-центру.
 
-Оціни дзвінок менеджера за 14 критеріями.
-
-Оцінювання повинно відповідати наступним правилам.
-
-Критерії та оцінки:
-
-1. Привітання: 0 / 2.5 / 5
-2. Дружелюбне питання / Мета дзвінка: 0 / 2.5
-3. Спроба продовжити розмову: 0 / 2.5 / 5
-4. Спроба презентації: 0 / 2.5 / 5
-5. Домовленість про наступний контакт: 0 / 5 / 7.5 / 10
-6. Пропозиція бонусу: 0 / 5 / 7.5 / 10
-7. Завершення: 0 / 2.5
-8. Передзвон клієнту: 0 / 5 / 10
-9. Не додумувати: 0 / 2.5 / 5
-10. Якість мовлення: 0 / 2.5
-11. Професіоналізм: 0 / 5 / 10
-12. CRM-картка: 0 / 2.5 / 5
-13. Робота із запереченнями: 0 / 2.5 / 5 / 7.5 / 10
-14. Зливання клієнта: 0 / 10 / 15
-
-Дзвінок:
-
-{dialogue}
-
-Коментар менеджера:
-{meta["manager_comment"]}
-
-Поверни JSON:
+Поверни ТІЛЬКИ JSON.
 
 {{
 "Привітання":number,
@@ -203,27 +175,66 @@ def analyze_call(dialogue,meta):
 "CRM-картка":number,
 "Робота із запереченнями":number,
 "Зливання клієнта":number,
-"comment":"короткий QA-коментар"
+"comment":"string"
 }}
+
+Дзвінок:
+
+{dialogue}
+
+Коментар менеджера:
+{meta["manager_comment"]}
 """
 
-    response=client.chat.completions.create(
-        model="gpt-4.1",
-        temperature=0,
-        messages=[
-        {"role":"system","content":"Ти експерт QA контакт-центру"},
-        {"role":"user","content":prompt}
-        ]
-    )
+    try:
 
-    text=response.choices[0].message.content
+        response = client.chat.completions.create(
+            model="gpt-4.1",
+            temperature=0,
+            messages=[
+                {"role":"system","content":"Ти QA-аналітик контакт-центру"},
+                {"role":"user","content":prompt}
+            ]
+        )
 
-    match=re.search(r"\{[\s\S]*\}",text)
+        text=response.choices[0].message.content.strip()
 
-    if match:
-        return json.loads(match.group())
+        text=text.replace("```json","").replace("```","")
 
-    return {}
+        match=re.search(r"\{[\s\S]*\}",text)
+
+        if match:
+            result=json.loads(match.group())
+        else:
+            raise ValueError
+
+    except:
+
+        result={}
+
+    template={
+    "Привітання":0,
+    "Дружелюбне питання / Мета дзвінка":0,
+    "Спроба продовжити розмову":0,
+    "Спроба презентації":0,
+    "Домовленість про наступний контакт":0,
+    "Пропозиція бонусу":0,
+    "Завершення":0,
+    "Передзвон клієнту":0,
+    "Не додумувати":0,
+    "Якість мовлення":0,
+    "Професіоналізм":0,
+    "CRM-картка":0,
+    "Робота із запереченнями":0,
+    "Зливання клієнта":0,
+    "comment":""
+    }
+
+    for k in template:
+        if k not in result:
+            result[k]=template[k]
+
+    return result
 
 
 def format_score(x):
