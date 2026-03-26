@@ -162,15 +162,25 @@ def transcribe_audio(audio_url):
 
     result = response.json()
 
-    dialogue = []
+    try:
 
-    for u in result["results"]["utterances"]:
+        if "utterances" in result["results"]:
 
-        speaker = "Менеджер" if u["speaker"] == 0 else "Гравець"
+            dialogue = []
 
-        dialogue.append(f"{speaker}: {u['transcript']}")
+            for u in result["results"]["utterances"]:
+                speaker = "Менеджер" if u["speaker"] == 0 else "Клієнт"
+                dialogue.append(f"{speaker}: {u['transcript']}")
 
-    return "\n".join(dialogue)
+            return "\n".join(dialogue)
+
+        else:
+
+            return result["results"]["channels"][0]["alternatives"][0]["transcript"]
+
+    except Exception:
+
+        return None
 
 
 # ---------------- COMMENT ----------------
@@ -178,9 +188,9 @@ def transcribe_audio(audio_url):
 def generate_comment(dialogue):
 
     prompt = f"""
-Проаналізуй дзвінок менеджера.
+Проаналізуй дзвінок менеджера контакт-центру.
 
-Напиши короткий коментар (2-3 речення):
+Напиши короткий коментар:
 • коротке резюме дзвінка
 • одну рекомендацію менеджеру
 
@@ -302,8 +312,7 @@ if st.button("Запустити аналіз"):
         transcript = transcribe_audio(call["url"])
 
         if not transcript:
-            st.warning("Не вдалося отримати транскрипцію")
-            continue
+            transcript = "Транскрипцію отримати не вдалося."
 
         scores = score_call(call)
 
