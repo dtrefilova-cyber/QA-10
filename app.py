@@ -124,7 +124,7 @@ def write_to_google_sheet(client, meta, scores):
 
             row = CRITERIA_ROWS[criterion]
 
-            updates.append((row, format_score_sheet(score)))
+            updates.append((row, float(score)))
 
     cells = []
 
