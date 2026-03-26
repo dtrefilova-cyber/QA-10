@@ -19,7 +19,6 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 def format_score(x):
     return f"{float(x):.1f}"
 
-
 def format_score_sheet(x):
     return format_score(x).replace(".", ",")
 
@@ -60,7 +59,6 @@ CRITERIA_ROWS = {
 "Зливання клієнта": 23
 }
 
-
 META_ROWS = {
 "call_date": 1,
 "qa_manager": 2,
@@ -81,39 +79,31 @@ def find_next_column(sheet):
     return len(row) + 1
 
 
-def write_to_google_sheet(meta, scores):
+def write_to_google_sheet(sheet, meta, scores):
 
-    try:
+    column = find_next_column(sheet)
 
-        client = connect_google()
+    updates = []
 
-        spreadsheet = client.open(meta["ret_manager"])
+    updates.append((META_ROWS["call_date"], meta["call_date"]))
+    updates.append((META_ROWS["qa_manager"], meta["qa_manager"]))
+    updates.append((META_ROWS["client_id"], meta["client_id"]))
+    updates.append((META_ROWS["check_date"], meta["check_date"]))
 
-        sheet = spreadsheet.sheet1
+    for criterion, score in scores.items():
 
-        column = find_next_column(sheet)
+        if criterion in CRITERIA_ROWS:
 
-        sheet.update_cell(META_ROWS["call_date"], column, meta["call_date"])
-        sheet.update_cell(META_ROWS["qa_manager"], column, meta["qa_manager"])
-        sheet.update_cell(META_ROWS["client_id"], column, meta["client_id"])
-        sheet.update_cell(META_ROWS["check_date"], column, meta["check_date"])
+            row = CRITERIA_ROWS[criterion]
 
-        for criterion, score in scores.items():
+            updates.append((row, format_score_sheet(score)))
 
-            if criterion in CRITERIA_ROWS:
+    cell_list = []
 
-                row = CRITERIA_ROWS[criterion]
+    for row, value in updates:
+        cell_list.append(gspread.Cell(row, column, value))
 
-                sheet.update_cell(
-                    row,
-                    column,
-                    format_score_sheet(score)
-                )
-
-    except Exception as e:
-
-        if "200" not in str(e):
-            st.warning(f"Не вдалося записати у Google Sheets: {e}")
+    sheet.update_cells(cell_list)
 
 
 # ---------------- TRANSCRIPTION ----------------
@@ -181,8 +171,8 @@ def generate_comment(dialogue):
 Проаналізуй дзвінок менеджера.
 
 Напиши короткий коментар (2-3 речення):
-1. коротке резюме дзвінка
-2. 1 порада менеджеру
+1 коротке резюме дзвінка
+1 порада менеджеру
 
 Без списків.
 
@@ -234,14 +224,14 @@ st.title("🎧 QA-10: Аналіз дзвінків")
 check_date = st.date_input("Дата перевірки", datetime.today())
 
 qa_managers_list = [
-    "Аліна",
-    "Дар'я",
-    "Надія",
-    "Анастасія",
-    "Владимира",
-    "Діана",
-    "Руслана",
-    "Олексій"
+    "Аліна Пронь",
+    "Дар'я Трефілова",
+    "Надія Татаренко",
+    "Анастасія Собакіна",
+    "Владимира Балховська",
+    "Діана Батрак",
+    "Руслана Каленіченко",
+    "Шутов Олексій"
 ]
 
 calls = []
@@ -250,17 +240,13 @@ for row in range(5):
 
     col1, col2 = st.columns(2)
 
-    for col, idx in zip([col1, col2], [row * 2 + 1, row * 2 + 2]):
+    for col, idx in zip([col1, col2], [row*2+1, row*2+2]):
 
         with col.expander(f"📞 Дзвінок {idx}", expanded=False):
 
             audio_url = st.text_input("Посилання на аудіо", key=f"url_{idx}")
 
-            qa_manager = st.selectbox(
-                "QA менеджер",
-                qa_managers_list,
-                key=f"qa_{idx}"
-            )
+            qa_manager = st.selectbox("QA менеджер", qa_managers_list, key=f"qa_{idx}")
 
             ret_manager = st.text_input("Менеджер RET", key=f"ret_{idx}")
 
@@ -268,20 +254,16 @@ for row in range(5):
 
             call_date = st.text_input("Дата дзвінка", key=f"date_{idx}")
 
-            speech_score = st.selectbox(
-                "Якість мовлення",
-                [2.5, 0],
-                key=f"speech_{idx}"
-            )
+            speech_score = st.selectbox("Якість мовлення", [2.5,0], key=f"speech_{idx}")
 
             calls.append({
-                "url": audio_url,
-                "qa_manager": qa_manager,
-                "ret_manager": ret_manager,
-                "client_id": client_id,
-                "call_date": call_date,
-                "check_date": check_date.strftime("%d-%m-%Y"),
-                "speech_score": speech_score
+                "url":audio_url,
+                "qa_manager":qa_manager,
+                "ret_manager":ret_manager,
+                "client_id":client_id,
+                "call_date":call_date,
+                "check_date":check_date.strftime("%d-%m-%Y"),
+                "speech_score":speech_score
             })
 
 
@@ -293,6 +275,8 @@ if "results" not in st.session_state:
 if st.button("Запустити аналіз"):
 
     st.session_state["results"].clear()
+
+    google_client = connect_google()
 
     for call in calls:
 
@@ -308,23 +292,30 @@ if st.button("Запустити аналіз"):
 
         comment = generate_comment(transcript)
 
-        write_to_google_sheet(call, scores)
+        try:
+
+            spreadsheet = google_client.open(call["ret_manager"])
+            sheet = spreadsheet.sheet1
+
+            write_to_google_sheet(sheet, call, scores)
+
+        except Exception as e:
+            st.warning(f"Google Sheets error: {e}")
 
         st.session_state["results"].append({
-            "meta": call,
-            "scores": scores,
-            "comment": comment
+            "meta":call,
+            "scores":scores,
+            "comment":comment
         })
 
 
 # ---------------- OUTPUT ----------------
 
-for i, res in enumerate(st.session_state["results"]):
+for i,res in enumerate(st.session_state["results"]):
 
     with st.expander(f"📊 Результат дзвінка {i+1}", expanded=True):
 
-        df = pd.DataFrame(res["scores"].items(), columns=["Критерій","Оцінка"])
-
+        df = pd.DataFrame(res["scores"].items(),columns=["Критерій","Оцінка"])
         df["Оцінка"] = df["Оцінка"].apply(format_score)
 
         st.table(df)
@@ -346,35 +337,21 @@ if st.session_state["results"]:
 
     with pd.ExcelWriter(xls, engine="openpyxl") as writer:
 
-        for i, res in enumerate(st.session_state["results"]):
+        for i,res in enumerate(st.session_state["results"]):
 
-            sheet_name = f"Call_{i+1}"
+            sheet_name=f"Call_{i+1}"
 
-            meta_df = pd.DataFrame(list(res["meta"].items()), columns=["Поле","Значення"])
-            meta_df.to_excel(writer, index=False, sheet_name=sheet_name)
+            meta_df=pd.DataFrame(list(res["meta"].items()),columns=["Поле","Значення"])
+            meta_df.to_excel(writer,index=False,sheet_name=sheet_name)
 
-            scores_df = pd.DataFrame(res["scores"].items(), columns=["Критерій","Оцінка"])
+            scores_df=pd.DataFrame(res["scores"].items(),columns=["Критерій","Оцінка"])
+            scores_df["Оцінка"]=scores_df["Оцінка"].apply(format_score)
 
-            scores_df["Оцінка"] = scores_df["Оцінка"].apply(format_score)
+            scores_df.to_excel(writer,index=False,sheet_name=sheet_name,startrow=len(meta_df)+2)
 
-            scores_df.to_excel(
-                writer,
-                index=False,
-                sheet_name=sheet_name,
-                startrow=len(meta_df)+2
-            )
+            comment_df=pd.DataFrame([["Коментар",res["comment"]]],columns=["Поле","Значення"])
 
-            comment_df = pd.DataFrame(
-                [["Коментар", res["comment"]]],
-                columns=["Поле","Значення"]
-            )
-
-            comment_df.to_excel(
-                writer,
-                index=False,
-                sheet_name=sheet_name,
-                startrow=len(meta_df)+len(scores_df)+4
-            )
+            comment_df.to_excel(writer,index=False,sheet_name=sheet_name,startrow=len(meta_df)+len(scores_df)+4)
 
     xls.seek(0)
 
