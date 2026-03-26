@@ -120,7 +120,7 @@ def transcribe_audio(audio_url):
     url = "https://api.deepgram.com/v1/listen"
 
     params = {
-        "model":"nova-2",
+        "model":"nova-3",
         "language":"uk",
         "punctuate":True,
         "diarize":True,
@@ -299,14 +299,14 @@ st.title("🎧 QA-10")
 check_date = st.date_input("Дата перевірки", datetime.today())
 
 qa_list = [
-"Аліна Пронь",
-"Дар'я Трефілова",
-"Надія Татаренко",
-"Анастасія Собакіна",
-"Владимира Балховська",
-"Діана Батрак",
-"Руслана Каленіченко",
-"Шутов Олексій"
+"Аліна",
+"Дар'я",
+"Надя",
+"Настя",
+"Владимира",
+"Діана",
+"Руслана",
+"Олексій"
 ]
 
 calls=[]
