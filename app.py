@@ -165,24 +165,50 @@ def transcribe_audio(audio_url):
         return ""
 
 
-# ---------------- GPT FEATURES ----------------
+# ---------------- GPT ANALYSIS ----------------
 
 def extract_features(dialogue):
 
     prompt = f"""
+Ти QA-аналітик контакт-центру.
+
 Проаналізуй дзвінок менеджера.
 
-Поверни JSON:
+Правила оцінювання:
+
+1. Привітання
+Менеджер представився і назвав сервіс.
+
+2. Використання імені клієнта
+Менеджер звернувся до клієнта по імені.
+
+3. Презентація
+Менеджер пояснив бонус або сервіс.
+
+4. Активність менеджера
+Менеджер ставить питання і намагається продовжити діалог.
+
+5. Follow-up
+none — домовленості немає  
+offer — запропонував передзвонити  
+day — домовленість на день  
+exact_time — домовленість на точний час
+
+6. Заперечення
+Клієнт висловив сумнів або відмову.
+
+Поверни ТІЛЬКИ JSON:
 
 {{
 "manager_introduced_self": true/false,
 "client_name_used": true/false,
 "presentation_detected": true/false,
-"client_busy": true/false,
 "manager_active": true/false,
 "followup_type": "none / offer / day / exact_time",
 "objection_detected": true/false
 }}
+
+Дзвінок:
 
 {dialogue}
 """
@@ -198,27 +224,43 @@ def extract_features(dialogue):
             ]
         )
 
-        text = response.choices[0].message.content
+        text=response.choices[0].message.content
 
-        match = re.search(r"\{.*\}", text, re.S)
+        match=re.search(r"\{[\s\S]*\}",text)
 
         if match:
-            return json.loads(match.group())
+            features=json.loads(match.group())
+        else:
+            features={}
 
     except:
-        pass
+        features={}
 
-    return {}
+    defaults={
+        "manager_introduced_self":False,
+        "client_name_used":False,
+        "presentation_detected":False,
+        "manager_active":False,
+        "followup_type":"none",
+        "objection_detected":False
+    }
+
+    for k,v in defaults.items():
+        features.setdefault(k,v)
+
+    return features
 
 
 # ---------------- COMMENT ----------------
 
 def generate_comment(dialogue):
 
-    prompt = f"""
+    prompt=f"""
 Коротко підсумуй дзвінок менеджера.
 
-1–2 речення: сильна сторона і рекомендація.
+1-2 речення:
+• сильна сторона
+• рекомендація
 
 {dialogue}
 """
@@ -237,7 +279,6 @@ def generate_comment(dialogue):
         return response.choices[0].message.content
 
     except:
-
         return ""
 
 
@@ -247,18 +288,18 @@ def score_call(f,meta):
 
     scores={}
 
-    if f.get("manager_introduced_self") and f.get("client_name_used"):
+    if f["manager_introduced_self"] and f["client_name_used"]:
         scores["Привітання"]=5
-    elif f.get("manager_introduced_self") or f.get("client_name_used"):
+    elif f["manager_introduced_self"] or f["client_name_used"]:
         scores["Привітання"]=2.5
     else:
         scores["Привітання"]=0
 
     scores["Дружелюбне питання / Мета дзвінка"]=2.5
-    scores["Спроба продовжити розмову"]=5 if f.get("manager_active") else 0
-    scores["Спроба презентації"]=5 if f.get("presentation_detected") else 0
+    scores["Спроба продовжити розмову"]=5 if f["manager_active"] else 0
+    scores["Спроба презентації"]=5 if f["presentation_detected"] else 0
 
-    follow = f.get("followup_type")
+    follow=f["followup_type"]
 
     if follow=="exact_time":
         scores["Домовленість про наступний контакт"]=10
@@ -269,7 +310,7 @@ def score_call(f,meta):
     else:
         scores["Домовленість про наступний контакт"]=0
 
-    repeat = meta["repeat_call"]
+    repeat=meta["repeat_call"]
 
     if repeat=="так, був протягом години":
         scores["Передзвон клієнту"]=10
@@ -280,9 +321,13 @@ def score_call(f,meta):
 
     scores["Не додумувати"]=5
     scores["Якість мовлення"]=meta["speech_score"]
+
     scores["Професіоналізм"]=5 if meta["bonus_check"]=="помилково нараховано" else 10
+
     scores["CRM-картка"]=5 if meta["manager_comment"] else 0
-    scores["Робота із запереченнями"]=10 if not f.get("objection_detected") else 5
+
+    scores["Робота із запереченнями"]=10 if not f["objection_detected"] else 5
+
     scores["Зливання клієнта"]=15
 
     return scores
@@ -298,7 +343,7 @@ st.title("🎧 QA-10")
 
 check_date = st.date_input("Дата перевірки", datetime.today())
 
-qa_list = [
+qa_list=[
 "Аліна",
 "Дар'я",
 "Надя",
@@ -357,7 +402,7 @@ for row in range(5):
 if "results" not in st.session_state:
     st.session_state["results"]=[]
 
-status = st.empty()
+status=st.empty()
 
 
 # ---------------- ANALYSIS ----------------
@@ -378,7 +423,9 @@ if st.button("Запустити аналіз"):
         transcript = transcribe_audio(call["url"])
 
         features = extract_features(transcript)
+
         scores = score_call(features,call)
+
         comment = generate_comment(transcript)
 
         write_to_google_sheet(google_client,call,scores)
@@ -414,7 +461,7 @@ for i,res in enumerate(st.session_state["results"]):
 
 if st.session_state["results"]:
 
-    xls = BytesIO()
+    xls=BytesIO()
 
     with pd.ExcelWriter(xls,engine="openpyxl") as writer:
 
