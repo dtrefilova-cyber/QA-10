@@ -39,11 +39,20 @@ for row in range(5):
 
             audio_url = st.text_input("Посилання на аудіо", key=f"url_{idx}")
 
-            qa_manager = st.selectbox("QA менеджер", qa_managers_list, key=f"qa_{idx}")
+            qa_manager = st.selectbox(
+                "QA менеджер",
+                qa_managers_list,
+                key=f"qa_{idx}"
+            )
+
             ret_manager = st.text_input("Менеджер RET", key=f"ret_{idx}")
+
             client_id = st.text_input("ID клієнта", key=f"client_{idx}")
 
-            call_date = st.text_input("Дата дзвінка (ДД-ММ-РРРР)", key=f"date_{idx}")
+            call_date = st.text_input(
+                "Дата дзвінка (ДД-ММ-РРРР)",
+                key=f"date_{idx}"
+            )
 
             bonus_check = st.selectbox(
                 "Бонус",
@@ -53,13 +62,25 @@ for row in range(5):
 
             repeat_call = st.selectbox(
                 "Повторний дзвінок",
-                ["так, був протягом години", "так, був протягом 3 годин", "ні, не було"],
+                [
+                    "так, був протягом години",
+                    "так, був протягом 3 годин",
+                    "ні, не було"
+                ],
                 key=f"repeat_{idx}"
             )
 
-            manager_comment = st.text_area("Коментар менеджера", height=80, key=f"comment_{idx}")
+            manager_comment = st.text_area(
+                "Коментар менеджера",
+                height=80,
+                key=f"comment_{idx}"
+            )
 
-            speech_score = st.selectbox("Якість мовлення (ручна оцінка)", [2.5, 0], key=f"speech_{idx}")
+            speech_score = st.selectbox(
+                "Якість мовлення (ручна оцінка)",
+                [2.5, 0],
+                key=f"speech_{idx}"
+            )
 
             calls.append({
                 "url": audio_url,
@@ -95,7 +116,12 @@ def transcribe_audio(audio_url):
 
     headers = {"Authorization": f"Token {DEEPGRAM_API_KEY}"}
 
-    response = requests.post(url, headers=headers, params=params, json={"url": audio_url})
+    response = requests.post(
+        url,
+        headers=headers,
+        params=params,
+        json={"url": audio_url}
+    )
 
     if response.status_code != 200:
         return None
@@ -110,6 +136,7 @@ def transcribe_audio(audio_url):
     current_text = ""
 
     for u in result["results"]["utterances"]:
+
         speaker = "Менеджер" if u["speaker"] == 0 else "Гравець"
         text = u["transcript"].strip()
 
@@ -149,26 +176,41 @@ def extract_features(dialogue):
     prompt = f"""
 Проаналізуй дзвінок.
 
+Сайти компанії:
+777 — онлайн казино
+Betking — онлайн казино + ставки на спорт + esport
+Vegas — онлайн казино
+
 ПРАВИЛА ПРЕЗЕНТАЦІЇ:
-Презентація — це:
-- пропозиція слоту / бонусу / активності
-- або відправка на email / месенджер
-- або пояснення вигоди
 
-НЕ є презентацією:
-- просто згадка сайту
+Презентація — це коли менеджер пропонує:
+слот, бонус, турнір, акцію, фріспіни, активність
+або каже що надішле пропозицію на email.
 
-КРИТИЧНІ СИТУАЦІЇ:
-- клієнт поспішає
-- клієнт грубить
-- клієнт кидає слухавку
-- клієнт у небезпеці
+ВАЖЛИВО:
+Якщо менеджер просто називає казино під час привітання
+(наприклад "Вітаю, це казино 777") — це НЕ є презентацією.
+
+ПРАВИЛА ЗАПЕРЕЧЕНЬ:
+
+Заперечення — це негатив щодо:
+гри на сайті, слотів, виграшів, бонусів.
+
+Типові приклади:
+- немає віддачі
+- багато програв
+- немає виграшів
+- слоти не платять
+
+ВАЖЛИВО:
+Фрази "немає часу", "незручно говорити" — НЕ є запереченням.
 
 FOLLOWUP:
-exact_time — конкретна година
-day — день
-offer — пропозиція
-none — відсутнє
+
+exact_time — точний час або інтервал
+day — домовленість про день
+offer — пропозиція передзвонити
+none — домовленості немає
 
 Початок:
 {intro}
@@ -179,7 +221,7 @@ none — відсутнє
 Кінець:
 {ending}
 
-Поверни тільки JSON:
+Поверни тільки JSON.
 
 {{
 "manager_introduced_self": true/false,
@@ -190,10 +232,7 @@ none — відсутнє
 "client_busy": true/false,
 "manager_active": true/false,
 "followup_type": "none / offer / day / exact_time",
-"objection_detected": true/false,
-"client_rude": true/false,
-"call_ended_abruptly": true/false,
-"critical_situation": true/false
+"objection_detected": true/false
 }}
 """
 
@@ -224,10 +263,7 @@ none — відсутнє
         "client_busy": False,
         "manager_active": True,
         "followup_type": "none",
-        "objection_detected": False,
-        "client_rude": False,
-        "call_ended_abruptly": False,
-        "critical_situation": False
+        "objection_detected": False
     }
 
     for k, v in defaults.items():
@@ -268,13 +304,6 @@ def score_call(features, meta):
 
     scores = {}
 
-    critical = (
-        features["client_busy"]
-        or features["client_rude"]
-        or features["call_ended_abruptly"]
-        or features["critical_situation"]
-    )
-
     introduced = features["manager_introduced_self"]
     client_name = features["client_name_used"]
 
@@ -286,33 +315,46 @@ def score_call(features, meta):
         scores["Привітання"] = 0
 
     scores["Дружелюбне питання / Мета дзвінка"] = 2.5
+
     scores["Спроба продовжити розмову"] = 5 if features["manager_active"] else 0
 
-    scores["Спроба презентації"] = 10 if critical else (5 if features["presentation_detected"] else 0)
+    presentation = features["presentation_detected"]
 
-    if critical:
+    if not presentation:
+        text = features.get("raw_text", "")
+        if any(word in text for word in ["слот", "бонус", "активн", "турнір", "фріспін"]):
+            presentation = True
+
+    scores["Спроба презентації"] = 5 if presentation else 0
+
+    followup = features["followup_type"]
+
+    if followup == "exact_time":
         scores["Домовленість про наступний контакт"] = 10
+    elif followup == "day":
+        scores["Домовленість про наступний контакт"] = 7.5
+    elif followup == "offer":
+        scores["Домовленість про наступний контакт"] = 5
     else:
-        f = features["followup_type"]
-        scores["Домовленість про наступний контакт"] = (
-            10 if f == "exact_time" else
-            7.5 if f == "day" else
-            5 if f == "offer" else 0
-        )
+        scores["Домовленість про наступний контакт"] = 0
 
-    if critical:
+    bonus_conditions = features["bonus_conditions_count"]
+
+    if not features["bonus_offered"]:
+        scores["Пропозиція бонусу"] = 0
+    elif bonus_conditions == 0:
+        scores["Пропозиція бонусу"] = 5
+    elif bonus_conditions == 1:
+        scores["Пропозиція бонусу"] = 7.5
+    else:
         scores["Пропозиція бонусу"] = 10
-    else:
-        if not features["bonus_offered"]:
-            scores["Пропозиція бонусу"] = 0
-        elif features["bonus_conditions_count"] == 0:
-            scores["Пропозиція бонусу"] = 5
-        elif features["bonus_conditions_count"] == 1:
-            scores["Пропозиція бонусу"] = 7.5
-        else:
-            scores["Пропозиція бонусу"] = 10
 
-    scores["Завершення"] = 5 if features["manager_active"] else 0
+    if features["client_busy"]:
+        scores["Завершення"] = 5
+    elif features["manager_active"]:
+        scores["Завершення"] = 5
+    else:
+        scores["Завершення"] = 0
 
     repeat = meta["repeat_call"]
 
@@ -321,9 +363,7 @@ def score_call(features, meta):
     elif repeat == "так, був протягом 3 годин":
         scores["Передзвон клієнту"] = 5
     else:
-        if features["call_ended_abruptly"]:
-            scores["Передзвон клієнту"] = 10
-        elif features["followup_type"] != "none":
+        if followup != "none":
             scores["Передзвон клієнту"] = 0
         else:
             scores["Передзвон клієнту"] = 10
@@ -334,9 +374,17 @@ def score_call(features, meta):
     scores["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
     scores["CRM-картка"] = 5 if meta["manager_comment"] else 0
     scores["Робота із запереченнями"] = 10 if not features["objection_detected"] else 5
-    scores["Зливання клієнта"] = 15 if features["manager_active"] else 10
+
+    if features["client_busy"]:
+        scores["Зливання клієнта"] = 15
+    elif features["manager_active"]:
+        scores["Зливання клієнта"] = 15
+    else:
+        scores["Зливання клієнта"] = 10
 
     return scores
+
+
 # ---------------- FORMAT ----------------
 
 def format_score(x):
