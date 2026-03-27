@@ -106,7 +106,7 @@ def transcribe_audio(audio_url):
     url = "https://api.deepgram.com/v1/listen"
 
     params = {
-        "model": "nova-2",
+        "model": "nova-3",
         "language": "uk",
         "diarize": "true",
         "utterances": "true",
