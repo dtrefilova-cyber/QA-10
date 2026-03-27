@@ -7,7 +7,6 @@ from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
 
-# ====================== API KEYS ======================
 DEEPGRAM_API_KEY = st.secrets["DEEPGRAM_API_KEY"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
@@ -21,7 +20,6 @@ qa_managers_list = [
     "Дар'я", "Надя", "Настя", "Владимира", "Діана", "Руслана", "Олексій"
 ]
 
-# ====================== ІНТЕРФЕЙС ======================
 calls = []
 for row in range(5):
     col1, col2 = st.columns(2)
@@ -32,7 +30,7 @@ for row in range(5):
             ret_manager = st.text_input("Менеджер RET", key=f"ret_{idx}")
             client_id = st.text_input("ID клієнта", key=f"client_{idx}")
             call_date = st.text_input("Дата дзвінка (ДД-ММ-РРРР)", key=f"date_{idx}")
-
+            
             bonus_check = st.selectbox(
                 "Бонус",
                 ["правильно нараховано", "помилково нараховано", "не потрібно"],
@@ -77,7 +75,6 @@ def transcribe_audio(audio_url):
     response = requests.post(url, headers=headers, params=params, json={"url": audio_url})
     
     if response.status_code != 200:
-        st.error(f"Deepgram error: {response.status_code}")
         return None
 
     result = response.json()
@@ -91,7 +88,6 @@ def transcribe_audio(audio_url):
     for u in result["results"]["utterances"]:
         speaker = "Менеджер" if u["speaker"] == 0 else "Гравець"
         text = u["transcript"].strip()
-        
         if speaker == current_speaker:
             current_text += " " + text
         else:
@@ -114,49 +110,39 @@ def extract_segments(dialogue):
     return intro, middle, ending
 
 
-# ====================== FEATURE EXTRACTION ======================
+# ====================== FEATURE EXTRACTION (посилений промпт) ======================
 def extract_features(dialogue):
     intro, middle, ending = extract_segments(dialogue)
 
     prompt = f"""
-Ти — дуже строгий QA-аналітик дзвінків казино. Дотримуйся правил максимально жорстко.
+Ти — максимально суворий і прискіпливий QA-аналітик дзвінків казино. 
+Не будь добрим, не виправдовуй клієнта. Якщо є хоча б ознаки агресії — став client_busy_or_rude = true.
 
-=== КРИТИЧНІ СИТУАЦІЇ (обов'язково ставити client_busy_or_rude = true) ===
-Якщо клієнт (Гравець):
-- матюкається (будь-які матюки: бля, хуй, нахуй, йоб, сука тощо)
-- глузує з менеджера, знущається, висміює
-- говорить агресивно, грубо, зневажливо
-- підвищує голос, перебиває, ігнорує менеджера
-- каже "відчепись", "пішов нахуй", "не дзвони більше" тощо
+=== КРИТИЧНІ СИТУАЦІЇ (обов'язково client_busy_or_rude = true) ===
+Клієнт агресивний, якщо:
+- використовує матюки (бля, хуй, нахуй, йоб, сука, пиздец, блядь, зайоб тощо)
+- глузує, висміює менеджера ("ха-ха ти серйозно?", "ти що дура?", "лохи ви всі")
+- говорить грубо, зневажливо, підвищеним тоном
+- каже "відчепись", "пішов нахуй", "не дзвони", "зайобала"
 
-→ навіть якщо менеджер спокійно намагається продовжити розмову, 
-все одно вважай це **критичною ситуацією** і став `client_busy_or_rude: true`.
+Навіть якщо менеджер спокійно продовжує розмову — це НЕ скасовує критичну ситуацію.
 
-Приклади критичної поведінки клієнта:
-- "Та йди ти нахуй зі своїм казино"
-- "Ви всі лохи, тільки гроші витягуєте"
-- "Ха-ха, ти серйозно зараз про бонуси мені розказуєш?"
-- Матюки + сміх + глузування
+Якщо client_busy_or_rude = true, то автоматично:
+- presentation_detected = true
+- bonus_offered = true
+- followup_type = "exact_time"
 
-Якщо таке є — client_busy_or_rude = true, навіть якщо клієнт не кинув слухавку.
+=== ДОМОВЛЕНІСТЬ ПРО НАСТУПНИЙ КОНТАКТ ===
+exact_time — будь-яка згадка часу або періоду (після 18:00, о 15:00, через годину, завтра вранці тощо).
 
-=== ПРАВИЛА ДЛЯ "ДОМОВЛЕНОСТІ ПРО НАСТУПНИЙ КОНТАКТ" ===
-- exact_time — якщо менеджер називає будь-який час або інтервал (після 18:00, о 15:00, через годину, завтра вранці, увечері тощо)
-- day — тільки день без часу
-- offer — просто "передзвоню"
-- none — немає
-
-=== ПРАВИЛА ПРЕЗЕНТАЦІЇ ===
-Презентація = пропозиція слота, бонусу, турніру, акції, фріспінів, активності або "надішлю на пошту".
-
-Поверни **тільки чистий JSON**, без жодного додаткового тексту:
+Поверни **тільки чистий JSON**, без будь-якого тексту крім JSON:
 
 {{
   "manager_introduced_self": true/false,
   "client_name_used": true/false,
   "presentation_detected": true/false,
   "bonus_offered": true/false,
-  "bonus_conditions_count": число (0-3),
+  "bonus_conditions_count": 0-3,
   "client_busy_or_rude": true/false,
   "client_hung_up": true/false,
   "manager_active": true/false,
@@ -164,14 +150,11 @@ def extract_features(dialogue):
   "objection_detected": true/false
 }}
 
-Початок дзвінка:
-{intro}
+Початок: {intro}
 
-Середина дзвінка:
-{middle}
+Середина: {middle}
 
-Кінець дзвінка:
-{ending}
+Кінець: {ending}
 """
 
     try:
@@ -179,18 +162,18 @@ def extract_features(dialogue):
             model="gpt-4o",
             temperature=0,
             messages=[
-                {"role": "system", "content": "Ти аналізатор дзвінків. Відповідай виключно валідним JSON."},
+                {"role": "system", "content": "Відповідай виключно валідним JSON. Не пиши нічого крім JSON."},
                 {"role": "user", "content": prompt}
             ]
         )
-        text = response.choices[0].message.content
-        match = re.search(r"\{.*\}", text, re.S | re.DOTALL)
-
+        text = response.choices[0].message.content.strip()
+        match = re.search(r"\{[\s\S]*\}", text)
+        
         features = json.loads(match.group()) if match else {}
     except:
         features = {}
 
-    # Дефолти
+    # Дефолтні значення
     defaults = {
         "manager_introduced_self": False,
         "client_name_used": False,
@@ -210,9 +193,21 @@ def extract_features(dialogue):
     return features
 
 
-# ====================== SCORING ======================
+# ====================== SCORING (з fallback) ======================
 def score_call(features, meta):
     scores = {}
+    
+    # === FALLBACK: примусова перевірка на матюки та агресію ===
+    raw = features.get("raw_text", "").lower()
+    rude_keywords = ["бля", "хуй", "нахуй", "йоб", "сука", "пизд", "блядь", "зайоб", "відчеп", "пішов на", "лохи", "дура", "ха-ха ти", "ти що", "глуз", "знуща"]
+    has_rude = any(kw in raw for kw in rude_keywords)
+    
+    if has_rude:
+        features["client_busy_or_rude"] = True
+        features["presentation_detected"] = True
+        features["bonus_offered"] = True
+        features["followup_type"] = "exact_time"
+
     is_critical = features.get("client_busy_or_rude", False) or features.get("client_hung_up", False)
 
     # 1. Привітання
@@ -263,19 +258,18 @@ def score_call(features, meta):
     # 5. Завершення
     scores["Завершення"] = 5 if (is_critical or features["manager_active"]) else 0
 
-    # 6. Передзвон клієнту — НОВА ЛОГІКА
+    # 6. Передзвон клієнту
     repeat = meta["repeat_call"]
     hung_up = features.get("client_hung_up", False)
-
     if repeat == "так, був протягом години":
         scores["Передзвон клієнту"] = 10
     elif repeat == "так, був протягом 3 годин":
         scores["Передзвон клієнту"] = 5
     else:  # "ні, не було"
         if hung_up:
-            scores["Передзвон клієнту"] = 0        # клієнт кинув — треба було передзвонити
+            scores["Передзвон клієнту"] = 0   # клієнт кинув — треба було передзвонити
         else:
-            scores["Передзвон клієнту"] = 0        # просто не було повторного дзвінка
+            scores["Передзвон клієнту"] = 0
 
     # Інші критерії
     scores["Не додумувати"] = 5
@@ -292,36 +286,16 @@ def score_call(features, meta):
 
 # ====================== КОМЕНТАР ======================
 def generate_comment(dialogue):
-    prompt = f"""
-Підсумуй дзвінок у 1-2 реченнях. Зазнач сильну сторону менеджера та одну ключову рекомендацію.
-{dialogue}
-"""
+    prompt = f"Підсумуй дзвінок у 1-2 реченнях. Зазнач сильну сторону менеджера та одну ключову рекомендацію.\n{dialogue}"
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
             temperature=0.3,
-            messages=[
-                {"role": "system", "content": "Ти QA-аналітик."},
-                {"role": "user", "content": prompt}
-            ]
+            messages=[{"role": "user", "content": prompt}]
         )
         return response.choices[0].message.content
     except:
         return "Не вдалося згенерувати коментар."
-
-
-# ====================== GOOGLE SHEETS (якщо використовуєш) ======================
-# Якщо потрібно підключення до Google Sheets — додай сюди свій код.
-# Наразі залишив заглушку, щоб код запускався.
-
-CRITERIA_ROWS = {
-    "Привітання": 5, "Дружелюбне питання / Мета дзвінка": 6, "Спроба продовжити розмову": 7,
-    "Спроба презентації": 8, "Домовленість про наступний контакт": 9, "Пропозиція бонусу": 10,
-    "Завершення": 11, "Передзвон клієнту": 12, "Не додумувати": 13, "Якість мовлення": 14,
-    "Професіоналізм": 15, "CRM-картка": 16, "Робота із запереченнями": 17, "Зливання клієнта": 18
-}
-
-META_ROWS = {"call_date": 1, "qa_manager": 2, "client_id": 3, "check_date": 4}
 
 
 # ====================== ЗАПУСК АНАЛІЗУ ======================
@@ -348,8 +322,7 @@ if st.button("🚀 Запустити аналіз", type="primary"):
             st.session_state["results"].append({
                 "meta": call,
                 "scores": scores,
-                "comment": comment,
-                "features": features
+                "comment": comment
             })
 
 # ====================== ВИВІД РЕЗУЛЬТАТІВ ======================
@@ -365,23 +338,19 @@ for i, res in enumerate(st.session_state["results"]):
         st.markdown("### Коментар QA")
         st.write(res["comment"])
 
-# ====================== ЕКСПОРТ В EXCEL ======================
+# ====================== ЕКСПОРТ ======================
 if st.session_state["results"]:
     xls = BytesIO()
     with pd.ExcelWriter(xls, engine="openpyxl") as writer:
         for i, res in enumerate(st.session_state["results"]):
             sheet_name = f"Call_{i+1}"
-            
-            # Meta
             meta_df = pd.DataFrame(list(res["meta"].items()), columns=["Поле", "Значення"])
             meta_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=0)
             
-            # Scores
             scores_df = pd.DataFrame(list(res["scores"].items()), columns=["Критерій", "Оцінка"])
             scores_df["Оцінка"] = scores_df["Оцінка"].apply(lambda x: f"{float(x):.1f}")
             scores_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=len(meta_df) + 2)
             
-            # Comment
             comment_df = pd.DataFrame([["Коментар", res["comment"]]], columns=["Поле", "Значення"])
             comment_df.to_excel(writer, index=False, sheet_name=sheet_name, 
                               startrow=len(meta_df) + len(scores_df) + 4)
