@@ -246,13 +246,22 @@ def score_call(features, meta):
     
     # Робота із запереченнями
     if features["objection_detected"]:
-        cont_score = features.get("conversation_continuation_score", 0)
-        if cont_score == 5:
+        # Якщо заперечення було, перевіряємо, чи це "м'яке" заперечення (зайнятий/передзвонити)
+        raw = features.get("raw_text", "").lower()
+        soft_objections = ["зайнят", "передзвони", "потім", "пізніше", "незручн"]
+        
+        if any(word in raw for word in soft_objections):
+            # М'які заперечення - автоматично 10 балів (менеджер не зобов'язаний їх відпрацьовувати)
             scores["Робота із запереченнями"] = 10
-        elif cont_score == 2.5:
-            scores["Робота із запереченнями"] = 7.5
         else:
-            scores["Робота із запереченнями"] = 0
+            # Жорсткі заперечення - оцінюємо якість відпрацювання
+            cont_score = features.get("conversation_continuation_score", 0)
+            if cont_score == 5:
+                scores["Робота із запереченнями"] = 10
+            elif cont_score == 2.5:
+                scores["Робота із запереченнями"] = 7.5
+            else:
+                scores["Робота із запереченнями"] = 0
     else:
         # Якщо заперечень не було - ставимо 10 балів
         scores["Робота із запереченнями"] = 10
