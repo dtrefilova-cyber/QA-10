@@ -186,17 +186,23 @@ def score_call(features, meta):
     else:
         scores["Спроба продовжити розмову"] = features.get("conversation_continuation_score", 0)
 
-    # Спроба презентації
+    # Спроба презентації (жорсткіша логіка)
     if is_critical:
         scores["Спроба презентації"] = 5
     else:
         presentation_score = features.get("presentation_score", 0)
-        if presentation_score > 0:
-            scores["Спроба презентації"] = presentation_score
+        
+        # Якщо presentation_score = 2.5, але в тексті немає згадки конкретного слота/активності
+        # то це НЕ презентація - ставимо 0
+        text = features.get("raw_text", "")
+        has_slot_or_activity = any(word in text for word in ["слот", "турнір", "акці", "фріспін", "активн", "live", "казино", "ігр"])
+        
+        if presentation_score == 2.5 and not has_slot_or_activity:
+            scores["Спроба презентації"] = 0
+        elif presentation_score == 5 and not has_slot_or_activity:
+            scores["Спроба презентації"] = 0
         else:
-            text = features.get("raw_text", "")
-            pres_kw = ["слот", "бонус", "турнір", "акці", "фріспін", "активн", "надішл", "пошт", "email"]
-            scores["Спроба презентації"] = 5 if any(k in text for k in pres_kw) else 0
+            scores["Спроба презентації"] = presentation_score
 
     # Домовленість про наступний контакт
     followup = features.get("followup_type", "none")
@@ -223,10 +229,8 @@ def score_call(features, meta):
         else:
             scores["Пропозиція бонусу"] = 10
 
-    # Завершення - завжди 5, якщо менеджер попрощався
-    # Перевіряємо наявність прощання в тексті
-    raw_text = features.get("raw_text", "")
-    has_farewell = any(word in raw_text for word in ["до побачення", "бувайте", "гарного дня", "всього доброго", "до зв'язку"])
+    # Завершення
+    has_farewell = any(word in raw for word in ["до побачення", "бувайте", "гарного дня", "всього доброго", "до зв'язку"])
     scores["Завершення"] = 5 if has_farewell else 0
 
     # Передзвон клієнту
@@ -246,15 +250,11 @@ def score_call(features, meta):
     
     # Робота із запереченнями
     if features["objection_detected"]:
-        # Якщо заперечення було, перевіряємо, чи це "м'яке" заперечення (зайнятий/передзвонити)
-        raw = features.get("raw_text", "").lower()
         soft_objections = ["зайнят", "передзвони", "потім", "пізніше", "незручн"]
-        
         if any(word in raw for word in soft_objections):
-            # М'які заперечення - автоматично 10 балів (менеджер не зобов'язаний їх відпрацьовувати)
+            # М'які заперечення - автоматично 10 балів
             scores["Робота із запереченнями"] = 10
         else:
-            # Жорсткі заперечення - оцінюємо якість відпрацювання
             cont_score = features.get("conversation_continuation_score", 0)
             if cont_score == 5:
                 scores["Робота із запереченнями"] = 10
@@ -263,10 +263,19 @@ def score_call(features, meta):
             else:
                 scores["Робота із запереченнями"] = 0
     else:
-        # Якщо заперечень не було - ставимо 10 балів
         scores["Робота із запереченнями"] = 10
     
-    scores["Зливання клієнта"] = 15 if (is_critical or features["manager_active"]) else 10
+    # Зливання клієнта - 15, якщо менеджер не злив клієнта
+    # Перевіряємо, чи була спроба продовжити розмову або домовленість
+    has_continuation = scores.get("Спроба продовжити розмову", 0) > 0
+    has_followup = followup != "none"
+    
+    if is_critical:
+        scores["Зливання клієнта"] = 15
+    elif has_continuation or has_followup:
+        scores["Зливання клієнта"] = 15
+    else:
+        scores["Зливання клієнта"] = 10
 
     return scores
 
