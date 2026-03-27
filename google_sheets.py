@@ -41,8 +41,8 @@ META_ROWS = {
 }
 
 def format_score_sheet(x):
-    """Форматує оцінку для Google Sheets (з комою замість крапки)"""
-    return f"{float(x):.1f}".replace(".", ",")
+    """Форматує оцінку для Google Sheets - повертає число"""
+    return float(x)
 
 def find_next_column(sheet):
     """Знаходить наступну вільну колонку"""
