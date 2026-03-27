@@ -223,7 +223,11 @@ def score_call(features, meta):
         else:
             scores["Пропозиція бонусу"] = 10
 
-    scores["Завершення"] = 5 if (is_critical or features["manager_active"]) else 0
+    # Завершення - завжди 5, якщо менеджер попрощався
+    # Перевіряємо наявність прощання в тексті
+    raw_text = features.get("raw_text", "")
+    has_farewell = any(word in raw_text for word in ["до побачення", "бувайте", "гарного дня", "всього доброго", "до зв'язку"])
+    scores["Завершення"] = 5 if has_farewell else 0
 
     # Передзвон клієнту
     repeat = meta["repeat_call"]
@@ -250,6 +254,7 @@ def score_call(features, meta):
         else:
             scores["Робота із запереченнями"] = 0
     else:
+        # Якщо заперечень не було - ставимо 10 балів
         scores["Робота із запереченнями"] = 10
     
     scores["Зливання клієнта"] = 15 if (is_critical or features["manager_active"]) else 10
