@@ -7,8 +7,9 @@ from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
 
-# Імпорт промпту з окремого файлу
+# Імпорт промпту та Google Sheets
 from prompts import get_full_analysis_prompt
+from google_sheets import connect_google, write_to_google_sheet
 
 DEEPGRAM_API_KEY = st.secrets["DEEPGRAM_API_KEY"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
@@ -252,7 +253,6 @@ def score_call(features, meta):
     if features["objection_detected"]:
         soft_objections = ["зайнят", "передзвони", "потім", "пізніше", "незручн"]
         if any(word in raw for word in soft_objections):
-            # М'які заперечення - автоматично 10 балів
             scores["Робота із запереченнями"] = 10
         else:
             cont_score = features.get("conversation_continuation_score", 0)
@@ -265,8 +265,7 @@ def score_call(features, meta):
     else:
         scores["Робота із запереченнями"] = 10
     
-    # Зливання клієнта - 15, якщо менеджер не злив клієнта
-    # Перевіряємо, чи була спроба продовжити розмову або домовленість
+    # Зливання клієнта
     has_continuation = scores.get("Спроба продовжити розмову", 0) > 0
     has_followup = followup != "none"
     
@@ -300,6 +299,13 @@ if "results" not in st.session_state:
 if st.button("🚀 Запустити аналіз", type="primary"):
     st.session_state["results"].clear()
     
+    # Підключаємось до Google Sheets
+    try:
+        google_client = connect_google()
+    except Exception as e:
+        st.warning(f"Не вдалося підключитись до Google Sheets: {e}")
+        google_client = None
+    
     for i, call in enumerate(calls):
         if not call["url"].strip():
             continue
@@ -313,6 +319,15 @@ if st.button("🚀 Запустити аналіз", type="primary"):
             features = extract_features(transcript)
             scores = score_call(features, call)
             comment = generate_comment(transcript)
+            
+            # Запис у Google Sheets
+            if google_client:
+                try:
+                    spreadsheet = google_client.open(call["ret_manager"])
+                    sheet = spreadsheet.sheet1
+                    write_to_google_sheet(sheet, call, scores)
+                except Exception as e:
+                    st.warning(f"Помилка запису в Google Sheets для {call['ret_manager']}: {e}")
 
             st.session_state["results"].append({
                 "meta": call,
