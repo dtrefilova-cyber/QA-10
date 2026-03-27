@@ -203,6 +203,7 @@ def extract_features(dialogue):
 # ====================== SCORING ======================
 def score_call(features, meta):
     scores = {}
+    is_critical = features.get("client_busy_or_rude", False) or features.get("client_hung_up", False)
 
     # 1. Привітання
     if features["manager_introduced_self"] and features["client_name_used"]:
@@ -216,8 +217,6 @@ def score_call(features, meta):
     scores["Спроба продовжити розмову"] = 5 if features["manager_active"] else 0
 
     # 2. Спроба презентації
-    is_critical = features.get("client_busy_or_rude", False) or features.get("client_hung_up", False)
-    
     if is_critical:
         scores["Спроба презентації"] = 5
     else:
@@ -227,7 +226,7 @@ def score_call(features, meta):
         scores["Спроба презентації"] = 5 if has_presentation or features["presentation_detected"] else 0
 
     # 3. Домовленість про наступний контакт
-    followup = features["followup_type"]
+    followup = features.get("followup_type", "none")
     if is_critical or followup == "exact_time":
         scores["Домовленість про наступний контакт"] = 10
     elif followup == "day":
@@ -254,17 +253,19 @@ def score_call(features, meta):
     # 5. Завершення
     scores["Завершення"] = 5 if (is_critical or features["manager_active"]) else 0
 
-    # 6. Передзвон клієнту
+    # 6. Передзвон клієнту — НОВА ЛОГІКА
     repeat = meta["repeat_call"]
+    hung_up = features.get("client_hung_up", False)
+
     if repeat == "так, був протягом години":
         scores["Передзвон клієнту"] = 10
     elif repeat == "так, був протягом 3 годин":
         scores["Передзвон клієнту"] = 5
     else:  # "ні, не було"
-        if is_critical or features.get("client_hung_up", False):
-            scores["Передзвон клієнту"] = 10   # за твоєю правкою
+        if hung_up:
+            scores["Передзвон клієнту"] = 0        # клієнт кинув — треба було передзвонити
         else:
-            scores["Передзвон клієнту"] = 0
+            scores["Передзвон клієнту"] = 0        # просто не було повторного дзвінка
 
     # Інші критерії
     scores["Не додумувати"] = 5
