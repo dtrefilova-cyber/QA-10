@@ -129,6 +129,20 @@ def extract_features(dialogue):
         match = re.search(r"\{[\s\S]*\}", text)
         
         features = json.loads(match.group()) if match else {}
+        
+        # ========== ДІАГНОСТИКА ==========
+        st.write("### 🔍 ДІАГНОСТИКА")
+        st.write("**Відповідь моделі:**")
+        st.code(text)
+        st.write("**Розпарсені features:**")
+        st.json(features)
+        st.write("**Перевірка ключових полів:**")
+        st.write(f"- conversation_continuation_score: {features.get('conversation_continuation_score', 'НЕМАЄ')}")
+        st.write(f"- presentation_score: {features.get('presentation_score', 'НЕМАЄ')}")
+        st.write(f"- objection_detected: {features.get('objection_detected', 'НЕМАЄ')}")
+        st.write(f"- client_busy_or_rude: {features.get('client_busy_or_rude', 'НЕМАЄ')}")
+        # ================================
+        
     except Exception as e:
         st.warning(f"Помилка при аналізі дзвінка: {e}")
         features = {}
@@ -296,6 +310,9 @@ if st.button("🚀 Запустити аналіз", type="primary"):
                 "scores": scores,
                 "comment": comment
             })
+            
+            # Зупиняємо після першого дзвінка для діагностики
+            st.stop()
 
 # ====================== ВИВІД РЕЗУЛЬТАТІВ ======================
 for i, res in enumerate(st.session_state["results"]):
