@@ -176,41 +176,26 @@ def extract_features(dialogue):
     prompt = f"""
 Проаналізуй дзвінок.
 
-Сайти компанії:
-777 — онлайн казино
-Betking — онлайн казино + ставки на спорт + esport
-Vegas — онлайн казино
-
 ПРАВИЛА ПРЕЗЕНТАЦІЇ:
+Презентація — це:
+- пропозиція слоту / бонусу / активності
+- або відправка на email / месенджер
+- або пояснення вигоди
 
-Презентація — це коли менеджер пропонує:
-слот, бонус, турнір, акцію, фріспіни, активність
-або каже що надішле пропозицію на email.
+НЕ є презентацією:
+- просто згадка сайту
 
-ВАЖЛИВО:
-Якщо менеджер просто називає казино під час привітання
-(наприклад "Вітаю, це казино 777") — це НЕ є презентацією.
-
-ПРАВИЛА ЗАПЕРЕЧЕНЬ:
-
-Заперечення — це негатив щодо:
-гри на сайті, слотів, виграшів, бонусів.
-
-Типові приклади:
-- немає віддачі
-- багато програв
-- немає виграшів
-- слоти не платять
-
-ВАЖЛИВО:
-Фрази "немає часу", "незручно говорити" — НЕ є запереченням.
+КРИТИЧНІ СИТУАЦІЇ:
+- клієнт поспішає
+- клієнт грубить
+- клієнт кидає слухавку
+- клієнт у небезпеці
 
 FOLLOWUP:
-
-exact_time — точний час або інтервал
-day — домовленість про день
-offer — пропозиція передзвонити
-none — домовленості немає
+exact_time — конкретна година
+day — день
+offer — пропозиція
+none — відсутнє
 
 Початок:
 {intro}
@@ -221,7 +206,7 @@ none — домовленості немає
 Кінець:
 {ending}
 
-Поверни тільки JSON.
+Поверни тільки JSON:
 
 {{
 "manager_introduced_self": true/false,
@@ -232,12 +217,15 @@ none — домовленості немає
 "client_busy": true/false,
 "manager_active": true/false,
 "followup_type": "none / offer / day / exact_time",
-"objection_detected": true/false
+"objection_detected": true/false,
+"client_rude": true/false,
+"call_ended_abruptly": true/false,
+"critical_situation": true/false
 }}
 """
 
     response = client.chat.completions.create(
-        model="gpt-4.1",
+        model="gpt-5.3",
         temperature=0,
         messages=[
             {"role": "system", "content": "Ти система аналізу дзвінків."},
@@ -263,7 +251,10 @@ none — домовленості немає
         "client_busy": False,
         "manager_active": True,
         "followup_type": "none",
-        "objection_detected": False
+        "objection_detected": False,
+        "client_rude": False,
+        "call_ended_abruptly": False,
+        "critical_situation": False
     }
 
     for k, v in defaults.items():
@@ -274,35 +265,18 @@ none — домовленості немає
     return features
 
 
-# ---------------- COMMENT ----------------
-
-def generate_comment(dialogue):
-
-    prompt = f"""
-Коротко підсумуй дзвінок менеджера казино.
-
-1–2 речення. Вкажи сильну сторону і рекомендацію.
-
-{dialogue}
-"""
-
-    response = client.chat.completions.create(
-        model="gpt-4.1",
-        temperature=0.3,
-        messages=[
-            {"role": "system", "content": "Ти QA-аналітик дзвінків."},
-            {"role": "user", "content": prompt}
-        ]
-    )
-
-    return response.choices[0].message.content
-
-
 # ---------------- SCORING ----------------
 
 def score_call(features, meta):
 
     scores = {}
+
+    critical = (
+        features["client_busy"]
+        or features["client_rude"]
+        or features["call_ended_abruptly"]
+        or features["critical_situation"]
+    )
 
     introduced = features["manager_introduced_self"]
     client_name = features["client_name_used"]
@@ -318,36 +292,41 @@ def score_call(features, meta):
 
     scores["Спроба продовжити розмову"] = 5 if features["manager_active"] else 0
 
-    presentation = features["presentation_detected"]
+    # ✅ ОНОВЛЕНО: презентація
+    if critical:
+        scores["Спроба презентації"] = 10
+    else:
+        scores["Спроба презентації"] = 5 if features["presentation_detected"] else 0
 
-    if not presentation:
-        text = features.get("raw_text", "")
-        if any(word in text for word in ["слот", "бонус", "активн", "турнір", "фріспін"]):
-            presentation = True
-
-    scores["Спроба презентації"] = 5 if presentation else 0
-
-    followup = features["followup_type"]
-
-    if followup == "exact_time":
+    # ✅ ОНОВЛЕНО: follow-up
+    if critical:
         scores["Домовленість про наступний контакт"] = 10
-    elif followup == "day":
-        scores["Домовленість про наступний контакт"] = 7.5
-    elif followup == "offer":
-        scores["Домовленість про наступний контакт"] = 5
     else:
-        scores["Домовленість про наступний контакт"] = 0
+        followup = features["followup_type"]
 
-    bonus_conditions = features["bonus_conditions_count"]
+        if followup == "exact_time":
+            scores["Домовленість про наступний контакт"] = 10
+        elif followup == "day":
+            scores["Домовленість про наступний контакт"] = 7.5
+        elif followup == "offer":
+            scores["Домовленість про наступний контакт"] = 5
+        else:
+            scores["Домовленість про наступний контакт"] = 0
 
-    if not features["bonus_offered"]:
-        scores["Пропозиція бонусу"] = 0
-    elif bonus_conditions == 0:
-        scores["Пропозиція бонусу"] = 5
-    elif bonus_conditions == 1:
-        scores["Пропозиція бонусу"] = 7.5
-    else:
+    # ✅ ОНОВЛЕНО: бонус
+    if critical:
         scores["Пропозиція бонусу"] = 10
+    else:
+        bonus_conditions = features["bonus_conditions_count"]
+
+        if not features["bonus_offered"]:
+            scores["Пропозиція бонусу"] = 0
+        elif bonus_conditions == 0:
+            scores["Пропозиція бонусу"] = 5
+        elif bonus_conditions == 1:
+            scores["Пропозиція бонусу"] = 7.5
+        else:
+            scores["Пропозиція бонусу"] = 10
 
     if features["client_busy"]:
         scores["Завершення"] = 5
@@ -356,6 +335,7 @@ def score_call(features, meta):
     else:
         scores["Завершення"] = 0
 
+    # ✅ ОНОВЛЕНО: передзвон
     repeat = meta["repeat_call"]
 
     if repeat == "так, був протягом години":
@@ -363,7 +343,9 @@ def score_call(features, meta):
     elif repeat == "так, був протягом 3 годин":
         scores["Передзвон клієнту"] = 5
     else:
-        if followup != "none":
+        if features["call_ended_abruptly"]:
+            scores["Передзвон клієнту"] = 10
+        elif features["followup_type"] != "none":
             scores["Передзвон клієнту"] = 0
         else:
             scores["Передзвон клієнту"] = 10
@@ -383,8 +365,6 @@ def score_call(features, meta):
         scores["Зливання клієнта"] = 10
 
     return scores
-
-
 # ---------------- FORMAT ----------------
 
 def format_score(x):
