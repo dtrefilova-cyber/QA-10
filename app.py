@@ -181,7 +181,10 @@ def score_call(features, meta):
     scores["Дружелюбне питання / Мета дзвінка"] = 2.5
     
     # Спроба продовжити розмову
-    scores["Спроба продовжити розмову"] = features.get("conversation_continuation_score", 0)
+    if is_critical:
+        scores["Спроба продовжити розмову"] = 5
+    else:
+        scores["Спроба продовжити розмову"] = features.get("conversation_continuation_score", 0)
 
     # Спроба презентації
     if is_critical:
@@ -237,7 +240,7 @@ def score_call(features, meta):
     scores["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
     scores["CRM-картка"] = 5 if meta.get("manager_comment") else 0
     
-    # Робота із запереченнями (оновлена логіка)
+    # Робота із запереченнями
     if features["objection_detected"]:
         cont_score = features.get("conversation_continuation_score", 0)
         if cont_score == 5:
