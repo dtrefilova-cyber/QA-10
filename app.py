@@ -137,14 +137,15 @@ def extract_features(dialogue):
     defaults = {
         "manager_introduced_self": False,
         "client_name_used": False,
-        "presentation_detected": False,
+        "presentation_score": 0,
         "bonus_offered": False,
         "bonus_conditions_count": 0,
         "client_busy_or_rude": False,
         "client_hung_up": False,
         "manager_active": True,
         "followup_type": "none",
-        "objection_detected": False
+        "objection_detected": False,
+        "conversation_continuation_score": 0
     }
     for k, v in defaults.items():
         features.setdefault(k, v)
@@ -163,7 +164,7 @@ def score_call(features, meta):
                        "бля", "хуй", "нахуй", "сука", "відчеп", "зайоб", "пизд"]
     if any(ind in raw for ind in rude_indicators):
         features["client_busy_or_rude"] = True
-        features["presentation_detected"] = True
+        features["presentation_score"] = 5
         features["bonus_offered"] = True
         features["followup_type"] = "exact_time"
 
@@ -178,15 +179,21 @@ def score_call(features, meta):
         scores["Привітання"] = 0
 
     scores["Дружелюбне питання / Мета дзвінка"] = 2.5
-    scores["Спроба продовжити розмову"] = 5 if features["manager_active"] else 0
+    
+    # Спроба продовжити розмову
+    scores["Спроба продовжити розмову"] = features.get("conversation_continuation_score", 0)
 
     # Спроба презентації
     if is_critical:
         scores["Спроба презентації"] = 5
     else:
-        text = features.get("raw_text", "")
-        pres_kw = ["слот", "бонус", "турнір", "акці", "фріспін", "активн", "надішл", "пошт", "email"]
-        scores["Спроба презентації"] = 5 if any(k in text for k in pres_kw) or features["presentation_detected"] else 0
+        presentation_score = features.get("presentation_score", 0)
+        if presentation_score > 0:
+            scores["Спроба презентації"] = presentation_score
+        else:
+            text = features.get("raw_text", "")
+            pres_kw = ["слот", "бонус", "турнір", "акці", "фріспін", "активн", "надішл", "пошт", "email"]
+            scores["Спроба презентації"] = 5 if any(k in text for k in pres_kw) else 0
 
     # Домовленість про наступний контакт
     followup = features.get("followup_type", "none")
