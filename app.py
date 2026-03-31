@@ -382,7 +382,7 @@ if st.button("🚀 Запустити аналіз", type="primary"):
             features = extract_features(transcript)
             scores = score_call(features, call)
             comment = generate_comment(transcript)
-            explanation = explain_scores(scores, features, meta)
+            explanation = explain_scores(scores, features)
 
             if google_client:
                 try:
