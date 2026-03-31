@@ -277,7 +277,9 @@ def generate_comment(dialogue):
         return response.choices[0].message.content
     except:
         return "Не вдалося згенерувати коментар."
-  def explain_scores(dialogue, scores):
+
+
+def explain_scores(dialogue, scores):
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
@@ -286,13 +288,10 @@ def generate_comment(dialogue):
                 "role": "user",
                 "content": f"""
 Поясни коротко причину оцінки по кожному критерію.
-
 Оцінки:
 {scores}
-
 Дзвінок:
 {dialogue}
-
 Формат:
 Критерій: причина
 """
@@ -300,7 +299,7 @@ def generate_comment(dialogue):
         )
         return response.choices[0].message.content
     except:
-        return ""      
+        return ""
 
 
 # ====================== RUN ======================
@@ -323,7 +322,6 @@ if st.button("🚀 Запустити аналіз", type="primary"):
 
         with st.spinner(f"Обробка дзвінка {i+1}..."):
             transcript = transcribe_audio(call["url"])
-
             if not transcript:
                 st.error(f"Не вдалося транскрибувати дзвінок {i+1}")
                 continue
@@ -343,17 +341,16 @@ if st.button("🚀 Запустити аналіз", type="primary"):
                     st.warning(f"Помилка запису в Google Sheets: {e}")
 
             st.session_state["results"].append({
-    "meta": call,
-    "scores": scores,
-    "comment": comment,
-    "explanation": explanation
-})
+                "meta": call,
+                "scores": scores,
+                "comment": comment,
+                "explanation": explanation
+            })
 
 
 # ====================== OUTPUT ======================
 for i, res in enumerate(st.session_state["results"]):
     with st.expander(f"📊 Результат дзвінка {i+1}", expanded=True):
-
         df = pd.DataFrame(list(res["scores"].items()), columns=["Критерій", "Оцінка"])
         df["Оцінка"] = df["Оцінка"].apply(lambda x: f"{float(x):.1f}")
         st.table(df)
@@ -363,14 +360,14 @@ for i, res in enumerate(st.session_state["results"]):
 
         st.markdown("### Коментар QA")
         st.write(res["comment"])
+
         st.markdown("### Пояснення оцінки")
-st.write(res["explanation"])
+        st.write(res["explanation"])
 
 
 # ====================== EXPORT ======================
 if st.session_state["results"]:
     xls = BytesIO()
-
     with pd.ExcelWriter(xls, engine="openpyxl") as writer:
         for i, res in enumerate(st.session_state["results"]):
             sheet_name = f"Call_{i+1}"
@@ -394,7 +391,6 @@ if st.session_state["results"]:
             )
 
     xls.seek(0)
-
     st.download_button(
         label="📥 Завантажити результати у XLSX",
         data=xls,
