@@ -151,7 +151,133 @@ def extract_features(dialogue):
 
 
 # ====================== SCORING ======================
-# (Вставляєш тут мою оновлену версію score_call, яку я тобі дав вище)
+def score_call(features, meta):
+    scores = {}
+    raw = features.get("raw_text", "").lower()
+
+    # 1. ВСТАНОВЛЕННЯ КОНТАКТУ
+    has_name = features.get("manager_introduced_self", False)
+    has_client = features.get("client_name_used", False)
+    has_company = any(w in raw for w in ["компанія", "казино", "служба підтримки", "сайт", "проєкт"])
+    has_position = any(w in raw for w in ["менеджер", "оператор", "спеціаліст"])
+    has_purpose = any(w in raw[:500] for w in ["телефоную", "дзвоню", "звертаюсь", "мета", "ціль"])
+    has_friendly = any(w in raw[:500] for w in ["як справ", "зручно говорити", "добрий день", "вітаю", "здрастуйте"])
+
+    greeting_or_purpose = 1 if (has_purpose or has_friendly) else 0
+    elements = sum([has_name, has_client, has_company, has_position, greeting_or_purpose])
+
+    if elements >= 4:
+        scores["Встановлення контакту"] = 7.5
+    elif elements == 3:
+        scores["Встановлення контакту"] = 5.0
+    elif elements == 2:
+        scores["Встановлення контакту"] = 2.5
+    else:
+        scores["Встановлення контакту"] = 0.0
+
+    # 2. СПРОБА ПРЕЗЕНТАЦІЇ
+    presentation_keywords = ["слот", "гра", "автомат", "акція", "промо", "турнір", "активність", "спін", "фріспін"]
+    has_presentation = any(kw in raw for kw in presentation_keywords)
+    scores["Спроба презентації"] = 5.0 if has_presentation else 0.0
+
+    # 3. ДОМОВЛЕНІСТЬ ПРО НАСТУПНИЙ КОНТАКТ
+    f = features.get("followup_type", "none")
+    scores["Домовленість про наступний контакт"] = 5 if f == "exact_time" else 2.5 if f == "offer" else 0
+
+    # 4. ПРОПОЗИЦІЯ БОНУСУ
+    offered = features.get("bonus_offered", False)
+    conditions = features.get("bonus_conditions_count", 0)
+    condition_keywords = ["депозит", "відіграш", "реєстрація", "турнір"]
+    has_conditions = any(kw in raw for kw in condition_keywords)
+
+    if not offered:
+        scores["Пропозиція бонусу"] = 0
+    elif has_conditions and conditions >= 2:
+        scores["Пропозиція бонусу"] = 10
+    else:
+        scores["Пропозиція бонусу"] = 5
+
+    # 5. ЗАВЕРШЕННЯ РОЗМОВИ
+    closing = features.get("closing_score", 0)
+    if closing >= 5:
+        scores["Завершення розмови"] = 5.0
+    elif closing >= 2.5:
+        scores["Завершення розмови"] = 2.5
+    else:
+        scores["Завершення розмови"] = 0.0
+
+    # 6. ПЕРЕДЗВОН КЛІЄНТУ
+    repeat = meta.get("repeat_call", "")
+    if repeat == "так, був протягом години":
+        scores["Передзвон клієнту"] = 15
+    elif repeat == "так, був протягом 2 годин":
+        scores["Передзвон клієнту"] = 10
+    else:
+        scores["Передзвон клієнту"] = 0
+
+    # 7. НЕ ДОДУМУЄ
+    push_phrases = ["чи є час", "чи є хвилин", "чи маєте хвилинку"]
+    if any(p in raw for p in push_phrases):
+        scores["Не додумувати"] = 0
+    else:
+        na_score = features.get("no_assumption_score", 0)
+        if na_score >= 5:
+            scores["Не додумувати"] = 5
+        elif na_score >= 2.5:
+            scores["Не додумувати"] = 2.5
+        else:
+            scores["Не додумувати"] = 0
+
+    # 8. ЯКІСТЬ МОВЛЕННЯ
+    scores["Якість мовлення"] = meta.get("speech_score", 0)
+
+    # 9. ПРОФЕСІОНАЛІЗМ
+    forbidden_words = ["лотерея","акція","розіграш","реклама","подарунок","популяризація","лотерейний білет","даруємо","розігруємо","конкурс","кешбек","відшкодуємо","компенсація","повернення","фріспіни","безкоштовно","страхування","страховка","ставка без ризику","фрібет","бездеп"]
+    if any(w in raw for w in forbidden_words):
+        scores["Професіоналізм"] = 0
+    elif meta.get("bonus_check") == "помилково нараховано":
+        scores["Професіоналізм"] = 5
+    else:
+        scores["Професіоналізм"] = 10
+
+    # 10. ОФОРМЛЕННЯ КАРТКИ
+    comment = meta.get("manager_comment", "").strip().lower()
+    if not comment:
+        scores["Оформлення картки"] = 0
+    elif "бонус" in comment and "час" in comment:
+        scores["Оформлення картки"] = 5
+    elif any(kw in comment for kw in ["бонус","повтор","дзвінок","час"]):
+        scores["Оформлення картки"] = 2.5
+    else:
+        scores["Оформлення картки"] = 0
+
+    # 11. РОБОТА ІЗ ЗАПЕРЕЧЕННЯМИ
+    if not features.get("objection_detected", False):
+        scores["Робота із запереченнями"] = 10
+    else:
+        cont = features.get("conversation_continuation_score", 0)
+        if cont == 5:
+            scores["Робота із запереченнями"] = 10
+        elif cont == 2.5:
+            scores["Робота із запереченнями"] = 5
+        else:
+            scores["Робота із запереченнями"] = 0
+
+    # 12. УТРИМАННЯ КЛІЄНТА
+    cont = features.get("conversation_continuation_score", 0)
+    if cont == 5:
+        if any(p in raw for p in ["знайдете хвилинку","можливо зараз","ще кілька хвилин"]):
+            scores["Утримання клієнта"] = 20
+        else:
+            scores["Утримання клієнта"] = 15
+    elif cont == 2.5:
+        scores["Утримання клієнта"] = 15
+    elif cont == 0:
+        scores["Утримання клієнта"] = 0
+    else:
+        scores["Утримання клієнта"] = 10
+
+    return scores
 
 
 # ====================== COMMENT ======================
