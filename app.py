@@ -178,13 +178,11 @@ def score_call(features, meta):
     # 2. СПРОБА ПРЕЗЕНТАЦІЇ
     presentation_keywords = ["слот", "гра", "турнір", "активність", "спін"]
 
-    # перевіряємо лише ключові слова
-    has_presentation = any(kw in raw for kw in presentation_keywords)
-
-    # чітка заборона: якщо є слово "бонус", то це не презентація
+    # якщо є слово "бонус" → це не презентація
     if "бонус" in raw:
         scores["Спроба презентації"] = 0.0
     else:
+        has_presentation = any(kw in raw for kw in presentation_keywords)
         scores["Спроба презентації"] = 5.0 if has_presentation else 0.0
 
 
