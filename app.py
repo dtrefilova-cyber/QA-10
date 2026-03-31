@@ -159,7 +159,7 @@ def score_call(features, meta):
     has_name = features.get("manager_introduced_self", False)
     has_client = features.get("client_name_used", False)
     has_company = any(w in raw for w in ["компан", "казино", "служба підтримки"])
-    has_purpose = any(w in raw for w in ["телефоную", "дзвоню", "звертаюсь", "мета", "ціль"])
+    has_purpose = any(w in raw for w in ["телефоную", "дзвоню", "звертаюсь", "мета", "ціль", "залишити бонуси"])
     has_friendly = any(w in raw for w in ["як справ", "зручно говорити", "добрий день", "привіт", "здрастуйте"])
 
     greeting_or_purpose = 1 if (has_purpose or has_friendly) else 0
@@ -174,7 +174,7 @@ def score_call(features, meta):
     else:
         scores["Встановлення контакту"] = 0.0
 
-    # 2. ПРЕЗЕНТАЦІЯ
+    # 2. СПРОБА ПРЕЗЕНТАЦІЇ
     scores["Спроба презентації"] = features.get("presentation_score", 0)
 
     # 3. ДОМОВЛЕНІСТЬ ПРО НАСТУПНИЙ КОНТАКТ
