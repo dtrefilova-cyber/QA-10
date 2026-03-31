@@ -432,8 +432,10 @@ for i, res in enumerate(st.session_state["results"]):
 
         st.markdown("### Коментар QA")
         st.write(res["comment"])
+
         st.markdown("### Пояснення оцінки")
-        st.write(res["explanation"])
+        for crit, expl in res["explanation"].items():
+            st.markdown(f"**{crit}:** {expl}")
 
 
 # ====================== EXPORT ======================
