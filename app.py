@@ -190,7 +190,7 @@ elements = sum([
 scores["Встановлення контакту"] = [0, 0, 2.5, 5, 7.5][elements]
 
     # FOLLOWUP
-    f = features["followup_type"]
+f = features["followup_type"]
     scores["Домовленість про наступний контакт"] = 5 if f=="exact_time" else 2.5 if f=="offer" else 0
 
     # BONUS
