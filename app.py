@@ -176,7 +176,7 @@ def score_call(features, meta):
         scores["Встановлення контакту"] = 0.0
 
     # 2. СПРОБА ПРЕЗЕНТАЦІЇ
-    presentation_keywords = ["слот", "гра", "автомат", "турнір", "активність", "спін", "фріспін"]
+    presentation_keywords = ["слот", "гра", "турнір", "активність", "спін"]
     has_presentation = any(kw in raw for kw in presentation_keywords)
     scores["Спроба презентації"] = 5.0 if has_presentation else 0.0
 
@@ -186,16 +186,15 @@ def score_call(features, meta):
 
     # 4. ПРОПОЗИЦІЯ БОНУСУ
     offered = features.get("bonus_offered", False)
-    conditions = features.get("bonus_conditions_count", 0)
-    condition_keywords = ["депозит", "відіграш", "реєстрація", "турнір"]
-    has_conditions = any(kw in raw for kw in condition_keywords)
+    condition_keywords = ["депозит", "поповнення", "вейджер"]
+    has_conditions = sum(kw in raw for kw in condition_keywords) >= 2
 
     if not offered:
-        scores["Пропозиція бонусу"] = 0
-    elif has_conditions and conditions >= 2:
-        scores["Пропозиція бонусу"] = 10
+            scores["Пропозиція бонусу"] = 0
+    elif has_conditions:
+            scores["Пропозиція бонусу"] = 10
     else:
-        scores["Пропозиція бонусу"] = 5
+            scores["Пропозиція бонусу"] = 5
 
     # 5. ЗАВЕРШЕННЯ РОЗМОВИ
     closing = features.get("closing_score", 0)
