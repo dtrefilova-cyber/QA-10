@@ -158,7 +158,7 @@ def score_call(features, meta):
     # 1. ВСТАНОВЛЕННЯ КОНТАКТУ
     has_name = features.get("manager_introduced_self", False)
     has_client = features.get("client_name_used", False)
-    has_company = any(w in raw for w in ["компанія", "казино"])
+    has_company = any(w in raw for w in ["компанія", "казино", "служба підтримки", "сайт", "проєкт"])
     has_position = any(w in raw for w in ["менеджер", "оператор", "спеціаліст"])
     has_purpose = any(w in raw[:500] for w in ["телефоную", "дзвоню", "звертаюсь", "мета", "ціль"])
     has_friendly = any(w in raw[:500] for w in ["як справ", "зручно говорити", "добрий день", "вітаю", "здрастуйте"])
@@ -175,15 +175,12 @@ def score_call(features, meta):
     else:
         scores["Встановлення контакту"] = 0.0
 
-    # 2. СПРОБА ПРЕЗЕНТАЦІЇ
-    presentation_keywords = ["слот", "гра", "автомат", "промо", "турнір", "активність", "спін", "фріспін", "бонус"]
+    # 2. СПРОБА ПРЕЗЕНТАЦІЇ (без бонусу!)
+    presentation_keywords = ["слот", "гра", "акція", "промо", "турнір", "активність"]
     has_presentation = any(kw in raw for kw in presentation_keywords)
 
     if has_presentation:
-        if "бонус" in raw:
-            scores["Спроба презентації"] = 5.0
-        else:
-            scores["Спроба презентації"] = 2.5
+        scores["Спроба презентації"] = 5.0
     else:
         scores["Спроба презентації"] = 0.0
 
@@ -270,11 +267,14 @@ def score_call(features, meta):
     # 12. УТРИМАННЯ КЛІЄНТА (0 / 10 / 15 / 20)
     cont = features.get("conversation_continuation_score", 0)
     if cont == 5:
-        scores["Утримання клієнта"] = 20
+        # перевірка на активні спроби утримати
+        if any(p in raw for p in ["знайдете хвилинку","можливо зараз","ще кілька хвилин"]):
+            scores["Утримання клієнта"] = 20
+        else:
+            scores["Утримання клієнта"] = 15
     elif cont == 2.5:
         scores["Утримання клієнта"] = 15
     elif cont == 0:
-        # якщо менеджер пасивний і спеціально завершив розмову
         scores["Утримання клієнта"] = 0
     else:
         scores["Утримання клієнта"] = 10
