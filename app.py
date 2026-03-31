@@ -153,7 +153,7 @@ def extract_features(dialogue):
 # ====================== SCORING ======================
 def score_call(features, meta):
     scores = {}
-    raw = features.get("raw_text", "")
+    raw = features.get("raw_text", "").lower()
 
     # 1. ВСТАНОВЛЕННЯ КОНТАКТУ
     has_name = features.get("manager_introduced_self", False)
@@ -178,7 +178,6 @@ def score_call(features, meta):
     # 2. СПРОБА ПРЕЗЕНТАЦІЇ (без бонусу!)
     presentation_keywords = ["слот", "гра", "автомат", "акція", "промо", "турнір", "активність", "спін", "фріспін"]
     has_presentation = any(kw in raw for kw in presentation_keywords)
-
     scores["Спроба презентації"] = 5.0 if has_presentation else 0.0
 
     # 3. ДОМОВЛЕНІСТЬ ПРО НАСТУПНИЙ КОНТАКТ
@@ -188,16 +187,17 @@ def score_call(features, meta):
     # 4. ПРОПОЗИЦІЯ БОНУСУ
     offered = features.get("bonus_offered", False)
     conditions = features.get("bonus_conditions_count", 0)
+    condition_keywords = ["депозит", "відіграш", "реєстрація", "турнір"]
+    has_conditions = any(kw in raw for kw in condition_keywords)
+
     if not offered:
         scores["Пропозиція бонусу"] = 0
-    elif conditions >= 2:
+    elif has_conditions and conditions >= 2:
         scores["Пропозиція бонусу"] = 10
-    elif conditions >= 1:
-        scores["Пропозиція бонусу"] = 5
     else:
-        scores["Пропозиція бонусу"] = 0
+        scores["Пропозиція бонусу"] = 5
 
-    # 5. ЗАВЕРШЕННЯ РОЗМОВИ (0 / 2.5 / 5)
+    # 5. ЗАВЕРШЕННЯ РОЗМОВИ
     closing = features.get("closing_score", 0)
     if closing >= 5:
         scores["Завершення розмови"] = 5.0
@@ -215,7 +215,7 @@ def score_call(features, meta):
     else:
         scores["Передзвон клієнту"] = 0
 
-    # 7. НЕ ДОДУМУЄ (0 / 2.5 / 5)
+    # 7. НЕ ДОДУМУЄ
     push_phrases = ["чи є час", "чи є хвилин", "чи маєте хвилинку"]
     if any(p in raw for p in push_phrases):
         scores["Не додумувати"] = 0
@@ -231,7 +231,7 @@ def score_call(features, meta):
     # 8. ЯКІСТЬ МОВЛЕННЯ
     scores["Якість мовлення"] = meta.get("speech_score", 0)
 
-    # 9. ПРОФЕСІОНАЛІЗМ (0 / 5 / 10)
+    # 9. ПРОФЕСІОНАЛІЗМ
     forbidden_words = ["лотерея","акція","розіграш","реклама","подарунок","популяризація","лотерейний білет","даруємо","розігруємо","конкурс","кешбек","відшкодуємо","компенсація","повернення","фріспіни","безкоштовно","страхування","страховка","ставка без ризику","фрібет","бездеп"]
     if any(w in raw for w in forbidden_words):
         scores["Професіоналізм"] = 0
@@ -240,7 +240,7 @@ def score_call(features, meta):
     else:
         scores["Професіоналізм"] = 10
 
-    # 10. ОФОРМЛЕННЯ КАРТКИ В CRM (0 / 2.5 / 5)
+    # 10. ОФОРМЛЕННЯ КАРТКИ
     comment = meta.get("manager_comment", "").strip().lower()
     if not comment:
         scores["Оформлення картки"] = 0
@@ -263,7 +263,7 @@ def score_call(features, meta):
         else:
             scores["Робота із запереченнями"] = 0
 
-    # 12. УТРИМАННЯ КЛІЄНТА (0 / 10 / 15 / 20)
+    # 12. УТРИМАННЯ КЛІЄНТА
     cont = features.get("conversation_continuation_score", 0)
     if cont == 5:
         if any(p in raw for p in ["знайдете хвилинку","можливо зараз","ще кілька хвилин"]):
@@ -296,27 +296,64 @@ def generate_comment(dialogue):
         return "Не вдалося згенерувати коментар."
 
 
-def explain_scores(dialogue, scores):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            temperature=0,
-            messages=[{
-                "role": "user",
-                "content": f"""
-Поясни коротко причину оцінки по кожному критерію.
-Оцінки:
-{scores}
-Дзвінок:
-{dialogue}
-Формат:
-Критерій: причина
-"""
-            }]
-        )
-        return response.choices[0].message.content
-    except:
-        return ""
+def explain_scores(scores, features, meta):
+    explanations = {}
+
+    explanations["Встановлення контакту"] = f"{scores['Встановлення контакту']} - Оцінка базується на кількості елементів (ім’я, посада, компанія/сайт, ім’я клієнта, мета/дружнє питання)."
+
+    if scores["Спроба презентації"] == 0:
+        explanations["Спроба презентації"] = "0.0 - Презентації продукту чи активності не було."
+    else:
+        explanations["Спроба презентації"] = "5.0 - Була згадка про продукт/активність."
+
+    if scores["Домовленість про наступний контакт"] == 5:
+        explanations["Домовленість про наступний контакт"] = "5 - Менеджер домовився про точний час наступного дзвінка."
+    elif scores["Домовленість про наступний контакт"] == 2.5:
+        explanations["Домовленість про наступний контакт"] = "2.5 - Менеджер лише запропонував можливість контакту."
+    else:
+        explanations["Домовленість про наступний контакт"] = "0 - Домовленості не було."
+
+    if scores["Пропозиція бонусу"] == 10:
+        explanations["Пропозиція бонусу"] = "10 - Бонус запропоновано з умовами."
+    elif scores["Пропозиція бонусу"] == 5:
+        explanations["Пропозиція бонусу"] = "5 - Бонус запропоновано без умов."
+    else:
+        explanations["Пропозиція бонусу"] = "0 - Бонус не запропоновано."
+
+    explanations["Завершення розмови"] = f"{scores['Завершення розмови']} - Оцінка за ввічливість та структурованість завершення."
+    explanations["Передзвон клієнту"] = f"{scores['Передзвон клієнту']} - Оцінка залежить від швидкості повторного дзвінка."
+    explanations["Не додумувати"] = f"{scores['Не додумувати']} - Оцінка за відсутність припущень чи підштовхування клієнта."
+    explanations["Якість мовлення"] = f"{scores['Якість мовлення']} - Оцінка за чіткість та зрозумілість мовлення."
+
+    if scores["Професіоналізм"] == 0:
+        explanations["Професіоналізм"] = "0 - Менеджер використав заборонені слова."
+    elif scores["Професіоналізм"] == 5:
+        explanations["Професіоналізм"] = "5 - Бонус був нарахований помилково."
+    else:
+        explanations["Професіоналізм"] = "10 - Менеджер діяв професійно."
+
+    if scores["Оформлення картки"] == 5:
+        explanations["Оформлення картки"] = "5 - Коментар відображає суть розмови (є бонус і час)."
+    elif scores["Оформлення картки"] == 2.5:
+        explanations["Оформлення картки"] = "2.5 - Коментар частково відображає суть розмови."
+    else:
+        explanations["Оформлення картки"] = "0 - Коментар не відображає суть розмови."
+
+    if not features.get("objection_detected", False):
+        explanations["Робота із запереченнями"] = "10 - Заперечень не було, тому максимальний бал."
+    else:
+        explanations["Робота із запереченнями"] = f"{scores['Робота із запереченнями']} - Оцінка за реакцію на заперечення."
+
+    if scores["Утримання клієнта"] == 20:
+        explanations["Утримання клієнта"] = "20 - Менеджер активно намагався утримати клієнта у розмові."
+    elif scores["Утримання клієнта"] == 15:
+        explanations["Утримання клієнта"] = "15 - Менеджер домовився про наступний дзвінок, але не намагався утримати клієнта у розмові."
+    elif scores["Утримання клієнта"] == 10:
+        explanations["Утримання клієнта"] = "10 - Менеджер зробив слабку спробу утримати клієнта."
+    else:
+        explanations["Утримання клієнта"] = "0 - Менеджер був пасивним і не намагався утримати клієнта."
+
+    return explanations
 
 
 # ====================== RUN ======================
