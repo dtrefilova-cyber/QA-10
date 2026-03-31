@@ -165,39 +165,57 @@ def score_call(features, meta):
     raw = features.get("raw_text", "")
 
     # CONTACT
-    elements = 0
-    if features["manager_introduced_self"]:
-        elements += 1
-    if features["client_name_used"]:
-        elements += 1
-    if "компан" in raw:
-        elements += 1
-    if "телефоную" in raw or "як справ" in raw:
-        elements += 1
+has_name = features["manager_introduced_self"]
+has_client = features["client_name_used"]
 
-    scores["Встановлення контакту"] = [0,0,2.5,5,7.5][elements]
+has_company = any(w in raw for w in [
+    "компан", "казино", "служба підтримки"
+])
 
-    # PRESENTATION
-    pres = features["presentation_score"]
-    has_activity = any(w in raw for w in ["слот","турнір","акц","бонус"])
-    if pres == 2.5 and not has_activity:
-        pres = 0
-    scores["Спроба презентації"] = pres
+has_purpose = any(w in raw for w in [
+    "телефоную", "дзвоню", "звертаюсь"
+])
+
+has_friendly = any(w in raw for w in [
+    "як справ", "зручно говорити"
+])
+
+elements = sum([
+    has_name,
+    has_client,
+    has_company,
+    (has_purpose or has_friendly)
+])
+
+scores["Встановлення контакту"] = [0, 0, 2.5, 5, 7.5][elements]
 
     # FOLLOWUP
     f = features["followup_type"]
     scores["Домовленість про наступний контакт"] = 5 if f=="exact_time" else 2.5 if f=="offer" else 0
 
     # BONUS
-    if not features["bonus_offered"]:
-        scores["Пропозиція бонусу"] = 0
-    elif features["bonus_conditions_count"] == 0:
-        scores["Пропозиція бонусу"] = 5
-    else:
-        scores["Пропозиція бонусу"] = 10
+if not features["bonus_offered"]:
+    score = 0
+elif features["bonus_conditions_count"] >= 1:
+    score = 10
+else:
+    score = 5
+
+scores["Пропозиція бонусу"] = score
 
     # CLOSING
-    scores["Завершення розмови"] = 5 if "до побачення" in raw else 0
+farewell_words = [
+    "до побачення",
+    "гарного дня",
+    "всього доброго",
+    "дякую",
+    "до зв'язку",
+    "на все добре"
+]
+
+has_farewell = any(w in raw for w in farewell_words)
+
+scores["Завершення розмови"] = 5 if has_farewell else 0
 
     # CALLBACK
     if meta["repeat_call"] == "так, був протягом години":
@@ -220,11 +238,29 @@ def score_call(features, meta):
     scores["Оформлення картки"] = 5 if meta["manager_comment"] else 0
 
     # OBJECTION
-    scores["Робота із запереченнями"] = 10 if not features["objection_detected"] else 5
+if not features["objection_detected"]:
+    scores["Робота із запереченнями"] = 10
+else:
+    cont = features.get("conversation_continuation_score", 0)
+
+    if cont == 5:
+        scores["Робота із запереченнями"] = 10
+    elif cont == 2.5:
+        scores["Робота із запереченнями"] = 5
+    else:
+        scores["Робота із запереченнями"] = 0
 
     # RETENTION
-    cont = features["conversation_continuation_score"]
-    scores["Утримання клієнта"] = 20 if cont==5 else 15 if cont==2.5 else 10
+cont = features.get("conversation_continuation_score", 0)
+
+if cont == 5:
+    score = 20
+elif cont == 2.5:
+    score = 15
+else:
+    score = 10
+
+scores["Утримання клієнта"] = score
 
     return scores
 # ====================== COMMENT ======================
@@ -241,6 +277,30 @@ def generate_comment(dialogue):
         return response.choices[0].message.content
     except:
         return "Не вдалося згенерувати коментар."
+  def explain_scores(dialogue, scores):
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            temperature=0,
+            messages=[{
+                "role": "user",
+                "content": f"""
+Поясни коротко причину оцінки по кожному критерію.
+
+Оцінки:
+{scores}
+
+Дзвінок:
+{dialogue}
+
+Формат:
+Критерій: причина
+"""
+            }]
+        )
+        return response.choices[0].message.content
+    except:
+        return ""      
 
 
 # ====================== RUN ======================
@@ -271,6 +331,7 @@ if st.button("🚀 Запустити аналіз", type="primary"):
             features = extract_features(transcript)
             scores = score_call(features, call)
             comment = generate_comment(transcript)
+            explanation = explain_scores(transcript, scores)
 
             # Google Sheets запис
             if google_client:
@@ -282,10 +343,11 @@ if st.button("🚀 Запустити аналіз", type="primary"):
                     st.warning(f"Помилка запису в Google Sheets: {e}")
 
             st.session_state["results"].append({
-                "meta": call,
-                "scores": scores,
-                "comment": comment
-            })
+    "meta": call,
+    "scores": scores,
+    "comment": comment,
+    "explanation": explanation
+})
 
 
 # ====================== OUTPUT ======================
@@ -301,6 +363,8 @@ for i, res in enumerate(st.session_state["results"]):
 
         st.markdown("### Коментар QA")
         st.write(res["comment"])
+        st.markdown("### Пояснення оцінки")
+st.write(res["explanation"])
 
 
 # ====================== EXPORT ======================
