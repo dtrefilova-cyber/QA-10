@@ -154,17 +154,18 @@ def extract_features(dialogue):
 def score_call(features, meta):
     scores = {}
     raw = features.get("raw_text", "")
-
-    # 1. ВСТАНОВЛЕННЯ КОНТАКТУ
+    
+    # 1. ВСТАНОВЛЕННЯ КОНТАКТУ - тільки явні елементи з початку розмови
     has_name = features.get("manager_introduced_self", False)
     has_client = features.get("client_name_used", False)
     has_company = any(w in raw for w in ["компан", "казино", "служба підтримки"])
-    has_purpose = any(w in raw for w in ["телефоную", "дзвоню", "звертаюсь", "мета", "ціль", "залишити бонуси"])
-    has_friendly = any(w in raw for w in ["як справ", "зручно говорити", "добрий день", "привіт", "здрастуйте"])
-
+    # Для 5-го пункту перевіряємо тільки початок розмови
+    has_purpose = any(w in raw[:500] for w in ["телефоную", "дзвоню", "звертаюсь", "мета", "ціль"])
+    has_friendly = any(w in raw[:500] for w in ["як справ", "зручно говорити"])
+    
     greeting_or_purpose = 1 if (has_purpose or has_friendly) else 0
     elements = sum([has_name, has_client, has_company, greeting_or_purpose])
-
+    
     if elements == 4:
         scores["Встановлення контакту"] = 7.5
     elif elements == 3:
@@ -173,14 +174,31 @@ def score_call(features, meta):
         scores["Встановлення контакту"] = 2.5
     else:
         scores["Встановлення контакту"] = 0.0
-
-    # 2. СПРОБА ПРЕЗЕНТАЦІЇ
-    scores["Спроба презентації"] = features.get("presentation_score", 0)
-
+    
+    # 2. СПРОБА ПРЕЗЕНТАЦІЇ - тільки активності з сайту/слоту
+    # Перевіряємо наявність згадок про конкретні ігри, бонуси, активності
+    presentation_keywords = [
+        "слот", "гра", "автомат", "акція", "промо", "турнір",
+        "активність", "депозит", "спін", "фріспін", "бонус"
+    ]
+    has_presentation = any(kw in raw for kw in presentation_keywords)
+    
+    # Якщо є згадка про активність/слот/гру - оцінюємо
+    if has_presentation:
+        # Перевіряємо якість презентації
+        if "реєстраці" in raw or "депозит" in raw:
+            scores["Спроба презентації"] = 10.0
+        elif "бонус" in raw:
+            scores["Спроба презентації"] = 7.5
+        else:
+            scores["Спроба презентації"] = 5.0
+    else:
+        scores["Спроба презентації"] = 0.0
+    
     # 3. ДОМОВЛЕНІСТЬ ПРО НАСТУПНИЙ КОНТАКТ
     f = features.get("followup_type", "none")
     scores["Домовленість про наступний контакт"] = 5 if f == "exact_time" else 2.5 if f == "offer" else 0
-
+    
     # 4. БОНУС
     offered = features.get("bonus_offered", False)
     conditions = features.get("bonus_conditions_count", 0)
@@ -192,10 +210,10 @@ def score_call(features, meta):
         scores["Пропозиція бонусу"] = 5
     else:
         scores["Пропозиція бонусу"] = 0
-
+    
     # 5. ЗАВЕРШЕННЯ РОЗМОВИ
     scores["Завершення розмови"] = features.get("closing_score", 0)
-
+    
     # 6. ПЕРЕДЗВОН КЛІЄНТУ
     repeat = meta.get("repeat_call", "")
     if repeat == "так, був протягом години":
@@ -204,19 +222,19 @@ def score_call(features, meta):
         scores["Передзвон клієнту"] = 10
     else:
         scores["Передзвон клієнту"] = 0
-
+    
     # 7. НЕ ДОДУМУЄ
     scores["Не додумувати"] = features.get("no_assumption_score", 0)
-
+    
     # 8. ЯКІСТЬ МОВЛЕННЯ
     scores["Якість мовлення"] = meta.get("speech_score", 0)
-
+    
     # 9. ПРОФЕСІОНАЛІЗМ
     scores["Професіоналізм"] = 5 if meta.get("bonus_check") == "помилково нараховано" else 10
-
+    
     # 10. ОФОРМЛЕННЯ КАРТКИ В CRM
     scores["Оформлення картки"] = 5 if bool(meta.get("manager_comment", "").strip()) else 0
-
+    
     # 11. РОБОТА ІЗ ЗАПЕРЕЧЕННЯМИ
     if not features.get("objection_detected", False):
         scores["Робота із запереченнями"] = 10
@@ -228,7 +246,7 @@ def score_call(features, meta):
             scores["Робота із запереченнями"] = 5
         else:
             scores["Робота із запереченнями"] = 0
-
+    
     # 12. УТРИМАННЯ КЛІЄНТА
     cont = features.get("conversation_continuation_score", 0)
     if cont == 5:
@@ -237,7 +255,7 @@ def score_call(features, meta):
         scores["Утримання клієнта"] = 15
     else:
         scores["Утримання клієнта"] = 10
-
+    
     return scores
 
 
