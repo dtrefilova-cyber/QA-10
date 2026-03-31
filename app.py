@@ -176,13 +176,10 @@ def score_call(features, meta):
         scores["Встановлення контакту"] = 0.0
 
     # 2. СПРОБА ПРЕЗЕНТАЦІЇ (без бонусу!)
-    presentation_keywords = ["слот", "гра", "акція", "промо", "турнір", "активність"]
+    presentation_keywords = ["слот", "гра", "автомат", "акція", "промо", "турнір", "активність", "спін", "фріспін"]
     has_presentation = any(kw in raw for kw in presentation_keywords)
 
-    if has_presentation:
-        scores["Спроба презентації"] = 5.0
-    else:
-        scores["Спроба презентації"] = 0.0
+    scores["Спроба презентації"] = 5.0 if has_presentation else 0.0
 
     # 3. ДОМОВЛЕНІСТЬ ПРО НАСТУПНИЙ КОНТАКТ
     f = features.get("followup_type", "none")
@@ -247,10 +244,12 @@ def score_call(features, meta):
     comment = meta.get("manager_comment", "").strip().lower()
     if not comment:
         scores["Оформлення картки"] = 0
+    elif "бонус" in comment and "час" in comment:
+        scores["Оформлення картки"] = 5
     elif any(kw in comment for kw in ["бонус","повтор","дзвінок","час"]):
         scores["Оформлення картки"] = 2.5
     else:
-        scores["Оформлення картки"] = 5
+        scores["Оформлення картки"] = 0
 
     # 11. РОБОТА ІЗ ЗАПЕРЕЧЕННЯМИ
     if not features.get("objection_detected", False):
@@ -267,7 +266,6 @@ def score_call(features, meta):
     # 12. УТРИМАННЯ КЛІЄНТА (0 / 10 / 15 / 20)
     cont = features.get("conversation_continuation_score", 0)
     if cont == 5:
-        # перевірка на активні спроби утримати
         if any(p in raw for p in ["знайдете хвилинку","можливо зараз","ще кілька хвилин"]):
             scores["Утримання клієнта"] = 20
         else:
