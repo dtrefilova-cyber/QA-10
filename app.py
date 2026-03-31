@@ -128,42 +128,105 @@ def extract_features(dialogue):
             model="gpt-4o",
             temperature=0,
             messages=[
-                {"role": "system", "content": "Відповідай тільки валідним JSON"},
+                {"role": "system", "content": "Поверни тільки JSON"},
                 {"role": "user", "content": prompt}
             ]
         )
 
         text = response.choices[0].message.content.strip()
         match = re.search(r"\{[\s\S]*\}", text)
-        data = json.loads(match.group()) if match else {}
+        features = json.loads(match.group()) if match else {}
 
     except Exception as e:
         st.warning(f"Помилка GPT: {e}")
-        data = {}
+        features = {}
 
-    return data
+    defaults = {
+        "manager_introduced_self": False,
+        "client_name_used": False,
+        "presentation_score": 0,
+        "bonus_offered": False,
+        "bonus_conditions_count": 0,
+        "followup_type": "none",
+        "objection_detected": False,
+        "conversation_continuation_score": 0
+    }
+
+    for k, v in defaults.items():
+        features.setdefault(k, v)
+
+    features["raw_text"] = dialogue.lower()
+    return features
 
 
 # ====================== SCORING ======================
 def score_call(features, meta):
-    scores = {
-        "Встановлення контакту": features.get("contact_score", 0),
-        "Спроба презентації": features.get("presentation_score", 0),
-        "Домовленість про наступний контакт": features.get("followup_score", 0),
-        "Пропозиція бонусу": features.get("bonus_score", 0),
-        "Завершення розмови": features.get("closing_score", 0),
-        "Передзвон клієнту": features.get("callback_score", 0),
-        "Не додумувати": features.get("no_assumption_score", 0),
-        "Якість мовлення": meta["speech_score"],
-        "Професіоналізм": features.get("professionalism_score", 0),
-        "Оформлення картки": features.get("crm_score", 0),
-        "Робота із запереченнями": features.get("objection_score", 0),
-        "Утримання клієнта": features.get("retention_score", 0),
-    }
+    scores = {}
+    raw = features.get("raw_text", "")
+
+    # CONTACT
+    elements = 0
+    if features["manager_introduced_self"]:
+        elements += 1
+    if features["client_name_used"]:
+        elements += 1
+    if "компан" in raw:
+        elements += 1
+    if "телефоную" in raw or "як справ" in raw:
+        elements += 1
+
+    scores["Встановлення контакту"] = [0,0,2.5,5,7.5][elements]
+
+    # PRESENTATION
+    pres = features["presentation_score"]
+    has_activity = any(w in raw for w in ["слот","турнір","акц","бонус"])
+    if pres == 2.5 and not has_activity:
+        pres = 0
+    scores["Спроба презентації"] = pres
+
+    # FOLLOWUP
+    f = features["followup_type"]
+    scores["Домовленість про наступний контакт"] = 5 if f=="exact_time" else 2.5 if f=="offer" else 0
+
+    # BONUS
+    if not features["bonus_offered"]:
+        scores["Пропозиція бонусу"] = 0
+    elif features["bonus_conditions_count"] == 0:
+        scores["Пропозиція бонусу"] = 5
+    else:
+        scores["Пропозиція бонусу"] = 10
+
+    # CLOSING
+    scores["Завершення розмови"] = 5 if "до побачення" in raw else 0
+
+    # CALLBACK
+    if meta["repeat_call"] == "так, був протягом години":
+        scores["Передзвон клієнту"] = 15
+    elif meta["repeat_call"] == "так, був протягом 3 годин":
+        scores["Передзвон клієнту"] = 10
+    else:
+        scores["Передзвон клієнту"] = 0
+
+    # NO ASSUMPTION
+    scores["Не додумувати"] = 0 if "давайте потім" in raw else 5
+
+    # SPEECH
+    scores["Якість мовлення"] = meta["speech_score"]
+
+    # PROFESSIONAL
+    scores["Професіоналізм"] = 5 if meta["bonus_check"]=="помилково нараховано" else 10
+
+    # CRM
+    scores["Оформлення картки"] = 5 if meta["manager_comment"] else 0
+
+    # OBJECTION
+    scores["Робота із запереченнями"] = 10 if not features["objection_detected"] else 5
+
+    # RETENTION
+    cont = features["conversation_continuation_score"]
+    scores["Утримання клієнта"] = 20 if cont==5 else 15 if cont==2.5 else 10
 
     return scores
-
-
 # ====================== COMMENT ======================
 def generate_comment(dialogue):
     try:
@@ -172,7 +235,7 @@ def generate_comment(dialogue):
             temperature=0.3,
             messages=[{
                 "role": "user",
-                "content": f"Підсумуй дзвінок у 1-2 реченнях. Сильна сторона + 1 рекомендація.\n{dialogue}"
+                "content": f"Підсумуй дзвінок у 1-2 реченнях. Вкажи сильну сторону менеджера і одну рекомендацію.\n{dialogue}"
             }]
         )
         return response.choices[0].message.content
@@ -187,10 +250,11 @@ if "results" not in st.session_state:
 if st.button("🚀 Запустити аналіз", type="primary"):
     st.session_state["results"].clear()
 
+    # Google Sheets
     try:
         google_client = connect_google()
     except Exception as e:
-        st.warning(f"Google Sheets помилка: {e}")
+        st.warning(f"Не вдалося підключитись до Google Sheets: {e}")
         google_client = None
 
     for i, call in enumerate(calls):
@@ -201,40 +265,41 @@ if st.button("🚀 Запустити аналіз", type="primary"):
             transcript = transcribe_audio(call["url"])
 
             if not transcript:
-                st.error(f"Помилка транскрипції {i+1}")
+                st.error(f"Не вдалося транскрибувати дзвінок {i+1}")
                 continue
 
             features = extract_features(transcript)
             scores = score_call(features, call)
             comment = generate_comment(transcript)
 
+            # Google Sheets запис
             if google_client:
                 try:
                     spreadsheet = google_client.open(call["ret_manager"])
                     sheet = spreadsheet.sheet1
                     write_to_google_sheet(sheet, call, scores)
                 except Exception as e:
-                    st.warning(f"Помилка Google Sheets: {e}")
+                    st.warning(f"Помилка запису в Google Sheets: {e}")
 
             st.session_state["results"].append({
                 "meta": call,
                 "scores": scores,
-                "comment": comment,
-                "features": features
+                "comment": comment
             })
 
 
 # ====================== OUTPUT ======================
 for i, res in enumerate(st.session_state["results"]):
-    with st.expander(f"📊 Дзвінок {i+1}", expanded=True):
+    with st.expander(f"📊 Результат дзвінка {i+1}", expanded=True):
+
         df = pd.DataFrame(list(res["scores"].items()), columns=["Критерій", "Оцінка"])
         df["Оцінка"] = df["Оцінка"].apply(lambda x: f"{float(x):.1f}")
         st.table(df)
 
-        total_score = res["features"].get("total_score", sum(res["scores"].values()))
+        total_score = sum(res["scores"].values())
         st.success(f"Загальний бал: {total_score:.1f}")
 
-        st.markdown("### Коментар")
+        st.markdown("### Коментар QA")
         st.write(res["comment"])
 
 
@@ -250,16 +315,24 @@ if st.session_state["results"]:
             meta_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=0)
 
             scores_df = pd.DataFrame(list(res["scores"].items()), columns=["Критерій", "Оцінка"])
+            scores_df["Оцінка"] = scores_df["Оцінка"].apply(lambda x: f"{float(x):.1f}")
             scores_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=len(meta_df) + 2)
 
-            comment_df = pd.DataFrame([["Коментар", res["comment"]]], columns=["Поле", "Значення"])
-            comment_df.to_excel(writer, index=False, sheet_name=sheet_name,
-                                startrow=len(meta_df) + len(scores_df) + 4)
+            comment_df = pd.DataFrame(
+                [["Коментар", res["comment"]]],
+                columns=["Поле", "Значення"]
+            )
+            comment_df.to_excel(
+                writer,
+                index=False,
+                sheet_name=sheet_name,
+                startrow=len(meta_df) + len(scores_df) + 4
+            )
 
     xls.seek(0)
 
     st.download_button(
-        label="📥 Завантажити XLSX",
+        label="📥 Завантажити результати у XLSX",
         data=xls,
         file_name="qa_results.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
