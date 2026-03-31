@@ -218,12 +218,12 @@ has_farewell = any(w in raw for w in farewell_words)
 scores["Завершення розмови"] = 5 if has_farewell else 0
 
     # CALLBACK
-    if meta["repeat_call"] == "так, був протягом години":
-        scores["Передзвон клієнту"] = 15
-    elif meta["repeat_call"] == "так, був протягом 3 годин":
-        scores["Передзвон клієнту"] = 10
-    else:
-        scores["Передзвон клієнту"] = 0
+if meta["repeat_call"] == "так, був протягом години":
+    scores["Передзвон клієнту"] = 15
+elif meta["repeat_call"] == "так, був протягом 3 годин":
+    scores["Передзвон клієнту"] = 10
+else:
+    scores["Передзвон клієнту"] = 0
 
     # NO ASSUMPTION
     scores["Не додумувати"] = 0 if "давайте потім" in raw else 5
