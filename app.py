@@ -250,17 +250,17 @@ else:
     else:
         scores["Робота із запереченнями"] = 0
 
-    # RETENTION
-cont = features.get("conversation_continuation_score", 0)
-
-if cont == 5:
-    score = 20
-elif cont == 2.5:
-    score = 15
-else:
-    score = 10
-
-scores["Утримання клієнта"] = score
+        # RETENTION (Утримання клієнта)
+    cont = features.get("conversation_continuation_score", 0)
+    
+    if cont == 5:
+        score = 20
+    elif cont == 2.5:
+        score = 15
+    else:
+        score = 10
+    
+    scores["Утримання клієнта"] = score
 
     return scores
 # ====================== COMMENT ======================
