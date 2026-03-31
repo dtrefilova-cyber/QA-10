@@ -262,7 +262,7 @@ else:
 
 scores["Утримання клієнта"] = score
 
-return scores
+    return scores
 # ====================== COMMENT ======================
 def generate_comment(dialogue):
     try:
