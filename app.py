@@ -145,8 +145,16 @@ def extract_features(dialogue):
         )
 
         text = response.choices[0].message.content
+        try:
         match = re.search(r"\{[\s\S]*\}", text)
-        features = json.loads(match.group()) if match else {}
+        if match:
+            features = json.loads(match.group())
+        else:
+            raise ValueError("JSON not found")
+    except:
+        st.warning("GPT не повернув валідний JSON")
+        st.write("RAW GPT:", text)
+        features = {}
 
     except Exception as e:
         st.error(f"GPT error: {e}")
