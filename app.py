@@ -129,43 +129,35 @@ def extract_segments(dialogue):
 
     return intro, middle, ending
 
-# ================= GPT =================
 def extract_features(dialogue):
     intro, middle, ending = extract_segments(dialogue)
     prompt = get_full_analysis_prompt(intro, middle, ending)
-
-    text = ""
 
     try:
         response = client.chat.completions.create(
             model="gpt-5.4",
             temperature=0,
             messages=[
-                {"role": "system", "content": "Поверни тільки JSON"},
+                {"role": "system", "content": "Поверни тільки валідний JSON без тексту"},
                 {"role": "user", "content": prompt}
             ]
         )
 
         text = response.choices[0].message.content.strip()
 
-        # 👉 парсинг JSON
-        try:
-            match = re.search(r"\{[\s\S]*\}", text)
-            if match:
-                features = json.loads(match.group())
-            else:
-                raise ValueError("JSON not found")
+        match = re.search(r"\{[\s\S]*\}", text)
+        if not match:
+            st.error("JSON не знайдено в відповіді GPT")
+            st.write(text)
+            return {}
 
-        except Exception:
-            st.warning("GPT не повернув валідний JSON")
-            st.write("RAW GPT:", text)
-            features = {}
+        features = json.loads(match.group())
 
     except Exception as e:
         st.error(f"GPT error: {e}")
-        features = {}
+        return {}
 
-    # 👉 дефолти (щоб нічого не падало)
+    # дефолти
     defaults = {
         "manager_name_present": False,
         "manager_position_present": False,
