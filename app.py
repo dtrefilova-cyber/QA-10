@@ -169,7 +169,7 @@ def score_call(features, meta):
     scores["Спроба презентації"] = 5 if features["has_presentation"] else 0
 
     f = features["followup_type"]
-    scores["Домовленність про наступний контакт"] = 5 if f == "exact_time" else 2.5 if f == "offer" else 0
+    scores["Домовленість про наступний контакт"] = 5 if f == "exact_time" else 2.5 if f == "offer" else 0
 
     scores["Пропозиція бонусу"] = (
         0 if not features["bonus_offered"]
@@ -186,17 +186,19 @@ def score_call(features, meta):
     )
 
     scores["Не додумувати"] = 5
-    scores["Якість мови"] = meta["speech_score"]
+
+    scores["Якість мовлення"] = meta["speech_score"]
+
     scores["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
 
     comment = meta["manager_comment"]
     scores["Оформлення картки"] = 0 if not comment else 2.5 if len(comment.split()) < 5 else 5
 
     if not features["objection_detected"]:
-        scores["Робота з запереченням"] = 10
+        scores["Робота із запереченнями"] = 10
     else:
         lvl = features["continuation_level"]
-        scores["Робота з запереченням"] = 10 if lvl == "strong" else 5 if lvl == "weak" else 0
+        scores["Робота із запереченнями"] = 10 if lvl == "strong" else 5 if lvl == "weak" else 0
 
     if not features["client_wants_to_end"]:
         scores["Утримання клієнта"] = 20
