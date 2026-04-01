@@ -93,7 +93,7 @@ def transcribe_audio(audio_url):
                 "language": "uk",
                 "punctuate": "true",
                 "smart_format": "true",
-                "keywords": "Vegas:3,vip:3,віп:3,бонус:2,менеджер:2"
+                "keyterm": "Vegas,vip,віп,бонус,менеджер"
             },
             json={"url": audio_url}
         )
