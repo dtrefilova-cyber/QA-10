@@ -63,6 +63,7 @@ for row in range(5):
             })
 
 # ================= TRANSCRIPTION =================
+# ================= TRANSCRIPTION =================
 def transcribe_audio(audio_url):
     if not audio_url:
         return None
@@ -71,22 +72,28 @@ def transcribe_audio(audio_url):
         response = requests.post(
             "https://api.deepgram.com/v1/listen",
             headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"},
+            params={
+                "model": "nova-3",
+                "language": "uk",
+                "punctuate": "true"
+            },
             json={"url": audio_url}
         )
 
         if response.status_code != 200:
-            st.error("Deepgram error")
+            st.error(f"Deepgram error: {response.text}")
             return None
 
         data = response.json()
-        utterances = data["results"]["utterances"]
 
-        dialogue = []
-        for u in utterances:
-            speaker = "Менеджер" if u["speaker"] == 0 else "Клієнт"
-            dialogue.append(f"{speaker}: {u['transcript']}")
+        # 👉 беремо стандартний transcript (він завжди є)
+        transcript = data["results"]["channels"][0]["alternatives"][0]["transcript"]
 
-        return "\n".join(dialogue)
+        if not transcript.strip():
+            st.warning("Порожня транскрипція")
+            return None
+
+        return transcript
 
     except Exception as e:
         st.error(f"Помилка транскрипції: {e}")
@@ -95,11 +102,12 @@ def transcribe_audio(audio_url):
 
 def extract_segments(dialogue):
     lines = dialogue.split("\n")
-    return (
-        "\n".join(lines[:5]),
-        "\n".join(lines[5:-5]) if len(lines) > 10 else "",
-        "\n".join(lines[-5:])
-    )
+
+    intro = "\n".join(lines[:5])
+    middle = "\n".join(lines[5:-5]) if len(lines) > 10 else "\n".join(lines[5:])
+    ending = "\n".join(lines[-5:]) if len(lines) > 5 else ""
+
+    return intro, middle, ending
 
 # ================= GPT =================
 def extract_features(dialogue):
