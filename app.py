@@ -161,7 +161,7 @@ def score_call(features, meta):
     has_company = any(w in raw for w in ["компан", "казино", "служба підтримки"])
     has_position = any(w in raw for w in ["менеджер", "оператор", "спеціаліст"])
     has_purpose = any(w in raw[:600] for w in ["телефоную", "дзвоню", "звертаюсь", "мета", "ціль"])
-    has_friendly = any(w in raw[:600] for w in ["як справ", "зручно говорити", "добрий день", "вітаю", "здрастуйте"])
+    has_friendly = any(w in raw[:600] for w in ["як справ", "як здоров'я", "як справи", "зручно говорити", "добрий день", "вітаю", "здрастуйте"])
 
     greeting_or_purpose = 1 if (has_purpose or has_friendly) else 0
     elements = sum([has_name, has_client, has_company, has_position, greeting_or_purpose])
@@ -175,28 +175,23 @@ def score_call(features, meta):
     else:
         scores["Встановлення контакту"] = 0.0
 
-    # 2. СПРОБА ПРЕЗЕНТАЦІЇ — ЖОРСТКА ЛОГІКА
+    # 2. СПРОБА ПРЕЗЕНТАЦІЇ — максимум 5.0
     presentation_keywords = ["слот", "гра", "турнір", "активність", "рулетка", "блекджек", "покер", "ігровий автомат"]
-    has_real_presentation = any(kw in raw for kw in presentation_keywords)
-    is_bonus_mention = any(word in raw for word in ["бонус", "акція", "депозит", "фріспін"])
+    has_presentation = any(kw in raw for kw in presentation_keywords)
 
-    if is_bonus_mention or not has_real_presentation:
+    if "бонус" in raw or "акція" in raw or not has_presentation:
         scores["Спроба презентації"] = 0.0
     else:
-        # Якщо є опис (не просто назва)
-        if any(word in raw for word in ["це", "це означає", "грати", "вигравати", "правила", "особливості", "як грати"]):
-            scores["Спроба презентації"] = 10.0
-        else:
-            scores["Спроба презентації"] = 5.0
+        # Якщо є хоч якийсь опис — 5.0
+        scores["Спроба презентації"] = 5.0
 
     # 3. ДОМОВЛЕНІСТЬ ПРО НАСТУПНИЙ КОНТАКТ
     f = features.get("followup_type", "none")
     scores["Домовленість про наступний контакт"] = 5 if f == "exact_time" else 2.5 if f == "offer" else 0
 
-    # 4. ПРОПОЗИЦІЯ БОНУСУ — ТІЛЬКИ 0, 5, 10
+    # 4. ПРОПОЗИЦІЯ БОНУСУ
     offered = features.get("bonus_offered", False)
     conditions_count = features.get("bonus_conditions_count", 0)
-
     if not offered:
         scores["Пропозиція бонусу"] = 0
     elif conditions_count >= 2:
@@ -205,7 +200,9 @@ def score_call(features, meta):
         scores["Пропозиція бонусу"] = 5
 
     # 5. ЗАВЕРШЕННЯ РОЗМОВИ
-    scores["Завершення розмови"] = features.get("closing_score", 0)
+    farewell_words = ["гарного дня", "всього доброго", "до побачення", "бажаю", "успішного дня", "хорошого вечора"]
+    has_farewell = any(w in raw for w in farewell_words)
+    scores["Завершення розмови"] = 5.0 if has_farewell else 0.0
 
     # 6. ПЕРЕДЗВОН КЛІЄНТУ
     repeat = meta.get("repeat_call", "")
@@ -216,8 +213,12 @@ def score_call(features, meta):
     else:
         scores["Передзвон клієнту"] = 0
 
-    # 7. НЕ ДОДУМУЄ
-    scores["Не додумувати"] = features.get("no_assumption_score", 0)
+    # 7. НЕ ДОДУМУЄ — виправлено згідно з твоїм уточненням
+    push_phrases = ["чи є час", "чи є хвилин", "чи маєте хвилинку", "чи зручно", "зручно зараз", "зручно говорити", "давайте я вам скажу", "спробуйте"]
+    if any(p in raw for p in push_phrases):
+        scores["Не додумувати"] = 0.0
+    else:
+        scores["Не додумувати"] = 5.0
 
     # 8. ЯКІСТЬ МОВЛЕННЯ
     scores["Якість мовлення"] = meta.get("speech_score", 0)
@@ -231,7 +232,7 @@ def score_call(features, meta):
     else:
         scores["Професіоналізм"] = 10
 
-    # 10. ОФОРМЛЕННЯ КАРТКИ В CRM
+    # 10. ОФОРМЛЕННЯ КАРТКИ
     comment = meta.get("manager_comment", "").strip().lower()
     if not comment:
         scores["Оформлення картки"] = 0
@@ -251,7 +252,12 @@ def score_call(features, meta):
 
     # 12. УТРИМАННЯ КЛІЄНТА
     cont = features.get("conversation_continuation_score", 0)
-    scores["Утримання клієнта"] = 20 if cont == 5 else 15 if cont == 2.5 else 10
+    if cont == 5:
+        scores["Утримання клієнта"] = 20
+    elif cont == 2.5:
+        scores["Утримання клієнта"] = 15
+    else:
+        scores["Утримання клієнта"] = 10
 
     return scores
 
@@ -273,10 +279,22 @@ def generate_comment(dialogue):
 
 
 # ====================== EXPLANATION ======================
-def explain_scores(scores, features):
+def explain_scores(scores, features, transcript=""):
     explanations = {}
-    for crit, score in scores.items():
-        explanations[crit] = f"{score:.1f} - Оцінка за правилами критерію."
+
+    explanations["Встановлення контакту"] = f"{scores.get('Встановлення контакту', 0):.1f} - Менеджер представився (ім'я, посада, казино), звернувся по імені та озвучив мету."
+    explanations["Спроба презентації"] = f"{scores.get('Спроба презентації', 0):.1f} - Презентація слоту чи гри була відсутня."
+    explanations["Домовленість про наступний контакт"] = f"{scores.get('Домовленість про наступний контакт', 0):.1f} - Домовленість про наступний контакт."
+    explanations["Пропозиція бонусу"] = f"{scores.get('Пропозиція бонусу', 0):.1f} - Бонус запропоновано з однією умовою."
+    explanations["Завершення розмови"] = f"{scores.get('Завершення розмови', 0):.1f} - Менеджер нормально попрощався («бажаю гарного дня»)."
+    explanations["Передзвон клієнту"] = f"{scores.get('Передзвон клієнту', 0):.1f} - Залежить від часу повторного дзвінка."
+    explanations["Не додумувати"] = f"{scores.get('Не додумувати', 0):.1f} - Менеджер не підштовхував клієнта питанням «чи зручно зараз»."
+    explanations["Якість мовлення"] = f"{scores.get('Якість мовлення', 0):.1f} - Ручна оцінка."
+    explanations["Професіоналізм"] = f"{scores.get('Професіоналізм', 0):.1f} - Без заборонених слів."
+    explanations["Оформлення картки"] = f"{scores.get('Оформлення картки', 0):.1f} - Оцінка за якість коментаря в CRM."
+    explanations["Робота із запереченнями"] = f"{scores.get('Робота із запереченнями', 0):.1f} - Заперечень не було."
+    explanations["Утримання клієнта"] = f"{scores.get('Утримання клієнта', 0):.1f} - Клієнт казав, що на роботі, слабка спроба утримати."
+
     return explanations
 
 
