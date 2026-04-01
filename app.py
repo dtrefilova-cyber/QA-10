@@ -211,15 +211,61 @@ def explain_scores(scores):
     return {k: str(v) for k, v in scores.items()}
 
 # ================= COMMENT =================
-def generate_comment(dialogue):
-    try:
-        r = client.chat.completions.create(
-            model="gpt-5.4",
-            messages=[{"role": "user", "content": f"Сильна сторона + що покращити:\n{dialogue}"}]
-        )
-        return r.choices[0].message.content
-    except:
-        return ""
+def generate_qa_comment(scores, features):
+    comments = []
+
+    # 1. Встановлення контакту
+    if scores["Встановлення контакту"] < 7.5:
+        missing = []
+        if not features["manager_name_present"]:
+            missing.append("не назвав ім’я")
+        if not features["manager_position_present"]:
+            missing.append("не назвав посаду")
+        if not features["company_present"]:
+            missing.append("не назвав компанію")
+        if not features["client_name_used"]:
+            missing.append("не звернувся по імені")
+        if not features["purpose_present"]:
+            missing.append("не озвучив мету дзвінка")
+
+        comments.append(f"Встановлення контакту — {', '.join(missing)}")
+
+    # 2. Презентація
+    if scores["Спроба презентації"] == 0:
+        comments.append("Спроба презентації — відсутній опис продукту або гри")
+
+    # 3. Follow-up
+    if scores["Домовленість про наступний контакт"] < 5:
+        comments.append("Домовленість про наступний контакт — не узгоджено точний час")
+
+    # 4. Бонус
+    if scores["Пропозиція бонусу"] < 10 and features["bonus_offered"]:
+        comments.append("Пропозиція бонусу — озвучено лише одну умову бонусу")
+
+    if scores["Пропозиція бонусу"] == 0:
+        comments.append("Пропозиція бонусу — бонус не запропоновано")
+
+    # 5. Завершення
+    if scores["Завершення розмови"] < 5:
+        comments.append("Завершення розмови — відсутнє коректне прощання")
+
+    # 6. Не додумувати
+    if scores["Не додумувати"] < 5:
+        comments.append("Не додумувати — менеджер робив припущення замість уточнення")
+
+    # 7. CRM
+    if scores["Оформлення картки"] < 5:
+        comments.append("Оформлення картки — коментар неповний або відсутній")
+
+    # 8. Утримання
+    if scores["Утримання клієнта"] < 20:
+        comments.append("Утримання клієнта — слабка спроба утримати клієнта")
+
+    # якщо все ідеально
+    if not comments:
+        return "Усі критерії виконані на максимальний бал"
+
+    return "\n".join([f"- {c}" for c in comments])
 
 # ================= RUN =================
 if "results" not in st.session_state:
@@ -243,7 +289,7 @@ if st.button("🚀 Запустити аналіз", type="primary"):
         features = extract_features(transcript)
         scores = score_call(features, call)
         explanation = explain_scores(scores)
-        comment = generate_comment(transcript)
+        comment = generate_qa_comment(scores, features)
 
         st.session_state["results"].append({
             "scores": scores,
