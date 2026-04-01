@@ -165,44 +165,44 @@ def score_call(features, meta):
         features["purpose_present"]
     ])
 
-    scores["Контакт"] = 7.5 if elements >= 4 else 5 if elements == 3 else 2.5 if elements == 2 else 0
-    scores["Презентація"] = 5 if features["has_presentation"] else 0
+    scores["Встановлення контакту"] = 7.5 if elements >= 4 else 5 if elements == 3 else 2.5 if elements == 2 else 0
+    scores["Спроба презентації"] = 5 if features["has_presentation"] else 0
 
     f = features["followup_type"]
-    scores["Follow-up"] = 5 if f == "exact_time" else 2.5 if f == "offer" else 0
+    scores["Домовленність про наступний контакт"] = 5 if f == "exact_time" else 2.5 if f == "offer" else 0
 
-    scores["Бонус"] = (
+    scores["Пропозиція бонусу"] = (
         0 if not features["bonus_offered"]
         else 10 if len(set(features["bonus_conditions"])) >= 2
         else 5
     )
 
-    scores["Завершення"] = 5 if features["has_farewell"] else 0
+    scores["Завершення розмови"] = 5 if features["has_farewell"] else 0
 
-    scores["Передзвон"] = (
+    scores["Передзвон клієнту"] = (
         15 if meta["repeat_call"] == "так, був протягом години"
         else 10 if meta["repeat_call"] == "так, був протягом 2 годин"
         else 0
     )
 
-    scores["Не додумує"] = 5
-    scores["Мовлення"] = meta["speech_score"]
+    scores["Не додумувати"] = 5
+    scores["Якість мови"] = meta["speech_score"]
     scores["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
 
     comment = meta["manager_comment"]
-    scores["CRM"] = 0 if not comment else 2.5 if len(comment.split()) < 5 else 5
+    scores["Оформлення картки"] = 0 if not comment else 2.5 if len(comment.split()) < 5 else 5
 
     if not features["objection_detected"]:
-        scores["Заперечення"] = 10
+        scores["Робота з запереченням"] = 10
     else:
         lvl = features["continuation_level"]
-        scores["Заперечення"] = 10 if lvl == "strong" else 5 if lvl == "weak" else 0
+        scores["Робота з запереченням"] = 10 if lvl == "strong" else 5 if lvl == "weak" else 0
 
     if not features["client_wants_to_end"]:
-        scores["Утримання"] = 20
+        scores["Утримання клієнта"] = 20
     else:
         lvl = features["continuation_level"]
-        scores["Утримання"] = 20 if lvl == "strong" else 15 if lvl == "weak" else 10
+        scores["Утримання клієнта"] = 20 if lvl == "strong" else 15 if lvl == "weak" else 10
 
     return scores
 
