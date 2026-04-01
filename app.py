@@ -158,10 +158,10 @@ def score_call(features, meta):
     # 1. ВСТАНОВЛЕННЯ КОНТАКТУ
     has_name = features.get("manager_introduced_self", False)
     has_client = features.get("client_name_used", False)
-    has_company = any(w in raw for w in ["компан", "казино", "служба підтримки"])
-    has_position = any(w in raw for w in ["менеджер", "оператор", "спеціаліст"])
-    has_purpose = any(w in raw[:600] for w in ["телефоную", "дзвоню", "звертаюсь", "мета", "ціль"])
-    has_friendly = any(w in raw[:600] for w in ["як справ", "як здоров'я", "як справи", "зручно говорити", "добрий день", "вітаю", "здрастуйте"])
+    has_company = any(w in raw for w in ["компан", "казино"])
+    has_position = any(w in raw for w in ["менеджер", "спеціаліст"])
+    has_purpose = any(w in raw[:700] for w in ["телефоную", "дзвоню", "звертаюсь", "мета", "ціль"])
+    has_friendly = any(w in raw[:700] for w in ["як справ", "як здоров'я", "як справи", "добрий день", "вітаю", "здрастуйте"])
 
     greeting_or_purpose = 1 if (has_purpose or has_friendly) else 0
     elements = sum([has_name, has_client, has_company, has_position, greeting_or_purpose])
@@ -175,14 +175,16 @@ def score_call(features, meta):
     else:
         scores["Встановлення контакту"] = 0.0
 
-    # 2. СПРОБА ПРЕЗЕНТАЦІЇ — максимум 5.0
-    presentation_keywords = ["слот", "гра", "турнір", "активність", "рулетка", "блекджек", "покер", "ігровий автомат"]
+    # 2. СПРОБА ПРЕЗЕНТАЦІЇ (максимум 5.0)
+    # Презентація = опис конкретного продукту/слоту/активності
+    presentation_keywords = ["слот", "гра", "турнір", "активність"]   # тільки те, що реально використовується
+
     has_presentation = any(kw in raw for kw in presentation_keywords)
 
+    # Якщо згадується бонус або акція — це НЕ презентація продукту
     if "бонус" in raw or "акція" in raw or not has_presentation:
         scores["Спроба презентації"] = 0.0
     else:
-        # Якщо є хоч якийсь опис — 5.0
         scores["Спроба презентації"] = 5.0
 
     # 3. ДОМОВЛЕНІСТЬ ПРО НАСТУПНИЙ КОНТАКТ
@@ -213,8 +215,8 @@ def score_call(features, meta):
     else:
         scores["Передзвон клієнту"] = 0
 
-    # 7. НЕ ДОДУМУЄ — виправлено згідно з твоїм уточненням
-    push_phrases = ["чи є час", "чи є хвилин", "чи маєте хвилинку", "чи зручно", "зручно зараз", "зручно говорити", "давайте я вам скажу", "спробуйте"]
+    # 7. НЕ ДОДУМУЄ
+    push_phrases = ["чи є час", "чи є хвилин", "чи маєте хвилинку", "чи зручно", "зручно зараз", "зручно говорити", "давайте я вам скажу", "спробуйте", "можете спробувати"]
     if any(p in raw for p in push_phrases):
         scores["Не додумувати"] = 0.0
     else:
@@ -223,7 +225,7 @@ def score_call(features, meta):
     # 8. ЯКІСТЬ МОВЛЕННЯ
     scores["Якість мовлення"] = meta.get("speech_score", 0)
 
-    # 9. ПРОФЕСІОНАЛІЗМ
+    # 9. ПРОФЕСІОНАЛІЗМ — враховуємо bonus_check
     forbidden_words = ["лотерея","акція","розіграш","реклама","подарунок","популяризація","лотерейний білет","даруємо","розігруємо","конкурс","кешбек","відшкодуємо","компенсація","повернення","фріспіни","безкоштовно","страхування","страховка","ставка без ризику","фрібет","бездеп"]
     if any(w in raw for w in forbidden_words):
         scores["Професіоналізм"] = 0
@@ -232,16 +234,12 @@ def score_call(features, meta):
     else:
         scores["Професіоналізм"] = 10
 
-    # 10. ОФОРМЛЕННЯ КАРТКИ
-    comment = meta.get("manager_comment", "").strip().lower()
+    # 10. ОФОРМЛЕННЯ КАРТКИ — спрощено
+    comment = meta.get("manager_comment", "").strip()
     if not comment:
         scores["Оформлення картки"] = 0
-    elif "бонус" in comment and ("час" in comment or re.search(r"\d{1,2}[:.]\d{2}", comment)):
-        scores["Оформлення картки"] = 5
-    elif "бонус" in comment or "час" in comment:
-        scores["Оформлення картки"] = 2.5
     else:
-        scores["Оформлення картки"] = 0
+        scores["Оформлення картки"] = 5   # якщо коментар є — вважаємо правильним (можна уточнити пізніше)
 
     # 11. РОБОТА ІЗ ЗАПЕРЕЧЕННЯМИ
     if not features.get("objection_detected", False):
