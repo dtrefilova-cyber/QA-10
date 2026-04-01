@@ -293,6 +293,13 @@ if st.button("🚀 Запустити аналіз", type="primary"):
         explanation = explain_scores(scores)
         comment = generate_qa_comment(scores, features)
 
+        if google_client:
+            try:
+                sheet = google_client.open(call["ret_manager"]).sheet1
+                write_to_google_sheet(sheet, call, scores)
+            except Exception as e:
+                st.error(f"Помилка запису в Google Sheets: {e}")
+
         st.session_state["results"].append({
             "scores": scores,
             "explanation": explanation,
