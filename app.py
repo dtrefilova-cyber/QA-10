@@ -225,7 +225,7 @@ def generate_comment(dialogue):
 if "results" not in st.session_state:
     st.session_state["results"] = []
 
-if st.button("🚀 Запустити аналіз"):
+if st.button("🚀 Запустити аналіз", type="primary"):
     st.session_state["results"].clear()
 
     for i, call in enumerate(calls):
@@ -253,15 +253,17 @@ if st.button("🚀 Запустити аналіз"):
 
 # ================= OUTPUT =================
 for i, res in enumerate(st.session_state["results"]):
-    st.subheader(f"Дзвінок {i+1}")
+    with st.expander(f"📊 Дзвінок {i+1}", expanded=True):
 
-    df = pd.DataFrame(res["scores"].items(), columns=["Критерій", "Оцінка"])
-    st.table(df)
+        df = pd.DataFrame(res["scores"].items(), columns=["Критерій", "Оцінка"])
+        df["Оцінка"] = df["Оцінка"].apply(lambda x: f"{float(x):.1f}")
+        st.table(df)
 
-    st.success(f"Сума: {sum(res['scores'].values())}")
+        total = sum(res["scores"].values())
+        st.success(f"Загальний бал: {total:.1f}")
 
-    st.markdown("### Коментар")
-    st.write(res["comment"])
+        st.markdown("### Коментар QA")
+        st.write(res["comment"])
 
 # ================= EXPORT =================
 if st.session_state["results"]:
