@@ -44,7 +44,7 @@ for row in range(5):
             )
             manager_comment = st.text_area("Коментар менеджера", height=80, key=f"comment_{idx}")
             speech_score = st.selectbox("Якість мовлення (ручна оцінка)", [2.5, 0], key=f"speech_{idx}")
-            
+           
             calls.append({
                 "url": audio_url,
                 "qa_manager": qa_manager,
@@ -158,10 +158,10 @@ def score_call(features, meta):
     # 1. ВСТАНОВЛЕННЯ КОНТАКТУ
     has_name = features.get("manager_introduced_self", False)
     has_client = features.get("client_name_used", False)
-    has_company = any(w in raw for w in ["компанія", "казино", "служба підтримки", "сайт", "проєкт"])
+    has_company = any(w in raw for w in ["компан", "казино", "служба підтримки"])
     has_position = any(w in raw for w in ["менеджер", "оператор", "спеціаліст"])
-    has_purpose = any(w in raw[:500] for w in ["телефоную", "дзвоню", "звертаюсь", "мета", "ціль"])
-    has_friendly = any(w in raw[:500] for w in ["як справ", "зручно говорити", "добрий день", "вітаю", "здрастуйте"])
+    has_purpose = any(w in raw[:600] for w in ["телефоную", "дзвоню", "звертаюсь", "мета", "ціль"])
+    has_friendly = any(w in raw[:600] for w in ["як справ", "зручно говорити", "добрий день", "вітаю", "здрастуйте"])
 
     greeting_or_purpose = 1 if (has_purpose or has_friendly) else 0
     elements = sum([has_name, has_client, has_company, has_position, greeting_or_purpose])
@@ -175,40 +175,37 @@ def score_call(features, meta):
     else:
         scores["Встановлення контакту"] = 0.0
 
-    # 2. СПРОБА ПРЕЗЕНТАЦІЇ
-    presentation_keywords = ["слот", "гра", "турнір", "активність"]
-    has_presentation = any(kw in raw for kw in presentation_keywords)
+    # 2. СПРОБА ПРЕЗЕНТАЦІЇ — ЖОРСТКА ЛОГІКА
+    presentation_keywords = ["слот", "гра", "турнір", "активність", "рулетка", "блекджек", "покер", "ігровий автомат"]
+    has_real_presentation = any(kw in raw for kw in presentation_keywords)
+    is_bonus_mention = any(word in raw for word in ["бонус", "акція", "депозит", "фріспін"])
 
-    if "бонус" in raw or "акція" in raw:
+    if is_bonus_mention or not has_real_presentation:
         scores["Спроба презентації"] = 0.0
     else:
-        scores["Спроба презентації"] = 5.0 if has_presentation else 0.0
-
+        # Якщо є опис (не просто назва)
+        if any(word in raw for word in ["це", "це означає", "грати", "вигравати", "правила", "особливості", "як грати"]):
+            scores["Спроба презентації"] = 10.0
+        else:
+            scores["Спроба презентації"] = 5.0
 
     # 3. ДОМОВЛЕНІСТЬ ПРО НАСТУПНИЙ КОНТАКТ
     f = features.get("followup_type", "none")
     scores["Домовленість про наступний контакт"] = 5 if f == "exact_time" else 2.5 if f == "offer" else 0
 
-    # 4. ПРОПОЗИЦІЯ БОНУСУ
+    # 4. ПРОПОЗИЦІЯ БОНУСУ — ТІЛЬКИ 0, 5, 10
     offered = features.get("bonus_offered", False)
-    condition_keywords = ["депозит", "поповнення", "вейджер"]
-    has_conditions = sum(kw in raw for kw in condition_keywords) >= 2
+    conditions_count = features.get("bonus_conditions_count", 0)
 
     if not offered:
-            scores["Пропозиція бонусу"] = 0
-    elif has_conditions:
-            scores["Пропозиція бонусу"] = 5
+        scores["Пропозиція бонусу"] = 0
+    elif conditions_count >= 2:
+        scores["Пропозиція бонусу"] = 10
     else:
-            scores["Пропозиція бонусу"] = 2.5
+        scores["Пропозиція бонусу"] = 5
 
     # 5. ЗАВЕРШЕННЯ РОЗМОВИ
-    closing = features.get("closing_score", 0)
-    if closing >= 5:
-        scores["Завершення розмови"] = 5.0
-    elif closing >= 2.5:
-        scores["Завершення розмови"] = 2.5
-    else:
-        scores["Завершення розмови"] = 0.0
+    scores["Завершення розмови"] = features.get("closing_score", 0)
 
     # 6. ПЕРЕДЗВОН КЛІЄНТУ
     repeat = meta.get("repeat_call", "")
@@ -220,17 +217,7 @@ def score_call(features, meta):
         scores["Передзвон клієнту"] = 0
 
     # 7. НЕ ДОДУМУЄ
-    push_phrases = ["чи є час", "чи є хвилин", "чи маєте хвилинку"]
-    if any(p in raw for p in push_phrases):
-        scores["Не додумувати"] = 0
-    else:
-        na_score = features.get("no_assumption_score", 0)
-        if na_score >= 5:
-            scores["Не додумувати"] = 5
-        elif na_score >= 2.5:
-            scores["Не додумувати"] = 2.5
-        else:
-            scores["Не додумувати"] = 0
+    scores["Не додумувати"] = features.get("no_assumption_score", 0)
 
     # 8. ЯКІСТЬ МОВЛЕННЯ
     scores["Якість мовлення"] = meta.get("speech_score", 0)
@@ -244,7 +231,7 @@ def score_call(features, meta):
     else:
         scores["Професіоналізм"] = 10
 
-    # 10. ОФОРМЛЕННЯ КАРТКИ
+    # 10. ОФОРМЛЕННЯ КАРТКИ В CRM
     comment = meta.get("manager_comment", "").strip().lower()
     if not comment:
         scores["Оформлення картки"] = 0
@@ -255,32 +242,16 @@ def score_call(features, meta):
     else:
         scores["Оформлення картки"] = 0
 
-
     # 11. РОБОТА ІЗ ЗАПЕРЕЧЕННЯМИ
     if not features.get("objection_detected", False):
         scores["Робота із запереченнями"] = 10
     else:
         cont = features.get("conversation_continuation_score", 0)
-        if cont == 5:
-            scores["Робота із запереченнями"] = 10
-        elif cont == 2.5:
-            scores["Робота із запереченнями"] = 5
-        else:
-            scores["Робота із запереченнями"] = 0
+        scores["Робота із запереченнями"] = 10 if cont == 5 else 5 if cont == 2.5 else 0
 
     # 12. УТРИМАННЯ КЛІЄНТА
     cont = features.get("conversation_continuation_score", 0)
-    if cont == 5:
-        if any(p in raw for p in ["знайдете хвилинку","можливо зараз","ще кілька хвилин"]):
-            scores["Утримання клієнта"] = 20
-        else:
-            scores["Утримання клієнта"] = 15
-    elif cont == 2.5:
-        scores["Утримання клієнта"] = 15
-    elif cont == 0:
-        scores["Утримання клієнта"] = 0
-    else:
-        scores["Утримання клієнта"] = 10
+    scores["Утримання клієнта"] = 20 if cont == 5 else 15 if cont == 2.5 else 10
 
     return scores
 
@@ -304,82 +275,8 @@ def generate_comment(dialogue):
 # ====================== EXPLANATION ======================
 def explain_scores(scores, features):
     explanations = {}
-
-    # 1. Встановлення контакту
-    explanations["Встановлення контакту"] = (
-        f"{scores['Встановлення контакту']} - Оцінка базується на кількості елементів "
-        "(ім’я, посада, компанія/сайт, ім’я клієнта, мета/дружнє питання)."
-    )
-
-    # 2. Спроба презентації
-    if scores["Спроба презентації"] == 0:
-        explanations["Спроба презентації"] = "0.0 - Презентації продукту чи активності не було."
-    elif scores["Спроба презентації"] == 2.5:
-        explanations["Спроба презентації"] = "5.0 - Була згадка про продукт/активність."
-    elif scores["Спроба презентації"] == 5.0:
-        explanations["Спроба презентації"] = "5.0 - Була повноцінна презентація продукту."
-
-
-    # 3. Домовленість про наступний контакт
-    if scores["Домовленість про наступний контакт"] == 5:
-        explanations["Домовленість про наступний контакт"] = "5 - Менеджер домовився про точний час наступного дзвінка."
-    elif scores["Домовленість про наступний контакт"] == 2.5:
-        explanations["Домовленість про наступний контакт"] = "2.5 - Менеджер лише запропонував можливість контакту."
-    else:
-        explanations["Домовленість про наступний контакт"] = "0 - Домовленості не було."
-
-    # 4. Пропозиція бонусу
-    if scores["Пропозиція бонусу"] == 10:
-        explanations["Пропозиція бонусу"] = "10 - Бонус запропоновано з умовами."
-    elif scores["Пропозиція бонусу"] == 5:
-        explanations["Пропозиція бонусу"] = "5 - Бонус запропоновано без умов."
-    else:
-        explanations["Пропозиція бонусу"] = "0 - Бонус не запропоновано."
-
-    # 5. Завершення розмови
-    explanations["Завершення розмови"] = f"{scores['Завершення розмови']} - Оцінка за ввічливість та структурованість завершення."
-
-    # 6. Передзвон клієнту
-    explanations["Передзвон клієнту"] = f"{scores['Передзвон клієнту']} - Оцінка залежить від швидкості повторного дзвінка."
-
-    # 7. Не додумувати
-    explanations["Не додумувати"] = f"{scores['Не додумувати']} - Оцінка за відсутність припущень чи підштовхування клієнта."
-
-    # 8. Якість мовлення
-    explanations["Якість мовлення"] = f"{scores['Якість мовлення']} - Оцінка за чіткість та зрозумілість мовлення."
-
-    # 9. Професіоналізм
-    if scores["Професіоналізм"] == 0:
-        explanations["Професіоналізм"] = "0 - Менеджер використав заборонені слова."
-    elif scores["Професіоналізм"] == 5:
-        explanations["Професіоналізм"] = "5 - Бонус був нарахований помилково."
-    else:
-        explanations["Професіоналізм"] = "10 - Менеджер діяв професійно."
-
-    # 10. Оформлення картки
-    if scores["Оформлення картки"] == 5:
-        explanations["Оформлення картки"] = "5 - Коментар відображає суть розмови (є бонус і час)."
-    elif scores["Оформлення картки"] == 2.5:
-        explanations["Оформлення картки"] = "2.5 - Коментар частково відображає суть розмови."
-    else:
-        explanations["Оформлення картки"] = "0 - Коментар не відображає суть розмови."
-
-    # 11. Робота із запереченнями
-    if not features.get("objection_detected", False):
-        explanations["Робота із запереченнями"] = "10 - Заперечень не було, тому максимальний бал."
-    else:
-        explanations["Робота із запереченнями"] = f"{scores['Робота із запереченнями']} - Оцінка за реакцію на заперечення."
-
-    # 12. Утримання клієнта
-    if scores["Утримання клієнта"] == 20:
-        explanations["Утримання клієнта"] = "20 - Менеджер активно намагався утримати клієнта у розмові."
-    elif scores["Утримання клієнта"] == 15:
-        explanations["Утримання клієнта"] = "15 - Менеджер домовився про наступний дзвінок, але не намагався утримати клієнта у розмові."
-    elif scores["Утримання клієнта"] == 10:
-        explanations["Утримання клієнта"] = "10 - Менеджер зробив слабку спробу утримати клієнта."
-    else:
-        explanations["Утримання клієнта"] = "0 - Менеджер був пасивним і не намагався утримати клієнта."
-
+    for crit, score in scores.items():
+        explanations[crit] = f"{score:.1f} - Оцінка за правилами критерію."
     return explanations
 
 
@@ -439,7 +336,6 @@ for i, res in enumerate(st.session_state["results"]):
 
         st.markdown("### Коментар QA")
         st.write(res["comment"])
-
         st.markdown("### Пояснення оцінки")
         for crit, expl in res["explanation"].items():
             st.markdown(f"**{crit}:** {expl}")
@@ -458,27 +354,8 @@ if st.session_state["results"]:
             scores_df["Оцінка"] = scores_df["Оцінка"].apply(lambda x: f"{float(x):.1f}")
             scores_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=len(meta_df) + 2)
 
-            comment_df = pd.DataFrame(
-                [["Коментар", res["comment"]]],
-                columns=["Поле", "Значення"]
-            )
-            comment_df.to_excel(
-                writer,
-                index=False,
-                sheet_name=sheet_name,
-                startrow=len(meta_df) + len(scores_df) + 4
-            )
-
-            explanation_df = pd.DataFrame(
-                list(res["explanation"].items()),
-                columns=["Критерій", "Пояснення"]
-            )
-            explanation_df.to_excel(
-                writer,
-                index=False,
-                sheet_name=sheet_name,
-                startrow=len(meta_df) + len(scores_df) + len(comment_df) + 6
-            )
+            comment_df = pd.DataFrame([["Коментар", res["comment"]]], columns=["Поле", "Значення"])
+            comment_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=len(meta_df) + len(scores_df) + 4)
 
     xls.seek(0)
     st.download_button(
