@@ -276,6 +276,13 @@ if "results" not in st.session_state:
 if st.button("🚀 Запустити аналіз", type="primary"):
     st.session_state["results"].clear()
 
+    # 👉 створюємо підключення до Google
+    google_client = None
+    try:
+        google_client = connect_google()
+    except Exception as e:
+        st.error(f"Google Sheets error: {e}")
+
     for i, call in enumerate(calls):
 
         if not call["url"]:
@@ -293,6 +300,7 @@ if st.button("🚀 Запустити аналіз", type="primary"):
         explanation = explain_scores(scores)
         comment = generate_qa_comment(scores, features)
 
+        # 👉 запис у Google Sheets
         if google_client:
             try:
                 sheet = google_client.open(call["ret_manager"]).sheet1
