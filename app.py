@@ -183,6 +183,7 @@ def extract_features(dialogue):
 def score_call(features, meta):
     scores = {}
 
+    # 1. Контакт
     elements = sum([
         features["manager_name_present"],
         features["manager_position_present"],
@@ -191,46 +192,89 @@ def score_call(features, meta):
         features["purpose_present"]
     ])
 
-    scores["Встановлення контакту"] = 7.5 if elements >= 4 else 5 if elements == 3 else 2.5 if elements == 2 else 0
+    scores["Встановлення контакту"] = (
+        7.5 if elements >= 4 else
+        5 if elements == 3 else
+        2.5 if elements == 2 else
+        0
+    )
+
+    # 2. Презентація
     scores["Спроба презентації"] = 5 if features["has_presentation"] else 0
 
+    # 3. Follow-up
     f = features["followup_type"]
-    scores["Домовленість про наступний контакт"] = 5 if f == "exact_time" else 2.5 if f == "offer" else 0
+    scores["Домовленість про наступний контакт"] = (
+        5 if f == "exact_time" else
+        2.5 if f == "offer" else
+        0
+    )
 
+    # 4. Бонус (захист від дублювання)
+    conditions = set(features["bonus_conditions"])
     scores["Пропозиція бонусу"] = (
         0 if not features["bonus_offered"]
-        else 10 if len(set(features["bonus_conditions"])) >= 2
+        else 10 if len(conditions) >= 2
         else 5
     )
 
+    # 5. Завершення
     scores["Завершення розмови"] = 5 if features["has_farewell"] else 0
 
+    # 6. Передзвон
+    repeat = meta["repeat_call"]
     scores["Передзвон клієнту"] = (
-        15 if meta["repeat_call"] == "так, був протягом години"
-        else 10 if meta["repeat_call"] == "так, був протягом 2 годин"
+        15 if repeat == "так, був протягом години"
+        else 10 if repeat == "так, був протягом 2 годин"
         else 0
     )
 
+    # 7. Не додумувати
     scores["Не додумувати"] = 5
 
+    # 8. Мовлення
     scores["Якість мовлення"] = meta["speech_score"]
 
-    scores["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
+    # 9. Професіоналізм
+    scores["Професіоналізм"] = (
+        5 if meta["bonus_check"] == "помилково нараховано" else 10
+    )
 
-    comment = meta["manager_comment"]
-    scores["Оформлення картки"] = 0 if not comment else 2.5 if len(comment.split()) < 5 else 5
+    # 10. CRM
+    comment = meta["manager_comment"].strip()
+    scores["Оформлення картки"] = (
+        0 if not comment else
+        2.5 if len(comment.split()) < 5 else
+        5
+    )
 
+    # 11. Заперечення
     if not features["objection_detected"]:
         scores["Робота із запереченнями"] = 10
     else:
         lvl = features["continuation_level"]
-        scores["Робота із запереченнями"] = 10 if lvl == "strong" else 5 if lvl == "weak" else 0
+        scores["Робота із запереченнями"] = (
+            10 if lvl == "strong" else
+            5 if lvl == "weak" else
+            0
+        )
 
-    if not features["client_wants_to_end"]:
-        scores["Утримання клієнта"] = 20
+    # 12. УТРИМАННЯ (КЛЮЧОВЕ ВИПРАВЛЕННЯ)
+    lvl = features["continuation_level"]
+
+    if features["client_wants_to_end"]:
+        # клієнт хоче завершити
+        scores["Утримання клієнта"] = (
+            20 if lvl == "strong" else
+            15 if lvl == "weak" else
+            10
+        )
     else:
-        lvl = features["continuation_level"]
-        scores["Утримання клієнта"] = 20 if lvl == "strong" else 15 if lvl == "weak" else 10
+        # менеджер сам зливає або не утримує
+        scores["Утримання клієнта"] = (
+            10 if lvl == "weak" else
+            0
+        )
 
     return scores
 
