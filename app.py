@@ -64,7 +64,22 @@ for row in range(5):
             })
 
 # ================= TRANSCRIPTION =================
-# ================= TRANSCRIPTION =================
+def clean_transcript(text):
+    replacements = {
+        "вагас": "Vegas",
+        "вегас": "Vegas",
+        "відпрограма": "віп програма",
+        "віпрограма": "віп програма",
+        "артемаш": "Артем",
+        "дмитроо": "Дмитро"
+    }
+
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+
+    return text
+
+
 def transcribe_audio(audio_url):
     if not audio_url:
         return None
@@ -76,7 +91,9 @@ def transcribe_audio(audio_url):
             params={
                 "model": "nova-3",
                 "language": "uk",
-                "punctuate": "true"
+                "punctuate": "true",
+                "smart_format": "true",
+                "keywords": "Vegas:3,vip:3,віп:3,бонус:2,менеджер:2"
             },
             json={"url": audio_url}
         )
@@ -87,12 +104,14 @@ def transcribe_audio(audio_url):
 
         data = response.json()
 
-        # 👉 беремо стандартний transcript (він завжди є)
         transcript = data["results"]["channels"][0]["alternatives"][0]["transcript"]
 
         if not transcript.strip():
             st.warning("Порожня транскрипція")
             return None
+
+        # 👉 очищаємо текст
+        transcript = clean_transcript(transcript)
 
         return transcript
 
