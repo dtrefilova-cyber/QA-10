@@ -15,7 +15,8 @@ def connect_google():
     )
     return gspread.authorize(creds)
 
-# Маппінг критеріїв на рядки в таблиці
+
+# Маппінг критеріїв на рядки в Google Sheets (оновлено під актуальні назви)
 CRITERIA_ROWS = {
     "Встановлення контакту": 5,
     "Спроба презентації": 6,
@@ -38,37 +39,47 @@ META_ROWS = {
     "check_date": 4
 }
 
+
 def format_score_sheet(x):
     """Форматує оцінку для Google Sheets - повертає число"""
-    return float(x)
+    try:
+        return float(x)
+    except (ValueError, TypeError):
+        return 0.0
+
 
 def find_next_column(sheet):
     """Знаходить наступну вільну колонку"""
-    row = sheet.row_values(META_ROWS["client_id"])
-    for i, value in enumerate(row, start=1):
-        if value == "":
-            return i
-    return len(row) + 1
+    try:
+        row = sheet.row_values(META_ROWS["client_id"])
+        for i, value in enumerate(row, start=1):
+            if not value or value.strip() == "":
+                return i
+        return len(row) + 1
+    except:
+        return 1  # якщо щось пішло не так — починаємо з першої колонки
+
 
 def write_to_google_sheet(sheet, meta, scores):
     """Записує результати в Google Sheets"""
     column = find_next_column(sheet)
     updates = []
-    
+   
     # Метадані
-    updates.append((META_ROWS["call_date"], meta["call_date"]))
-    updates.append((META_ROWS["qa_manager"], meta["qa_manager"]))
-    updates.append((META_ROWS["client_id"], meta["client_id"]))
-    updates.append((META_ROWS["check_date"], meta["check_date"]))
-    
+    updates.append((META_ROWS["call_date"], meta.get("call_date", "")))
+    updates.append((META_ROWS["qa_manager"], meta.get("qa_manager", "")))
+    updates.append((META_ROWS["client_id"], meta.get("client_id", "")))
+    updates.append((META_ROWS["check_date"], meta.get("check_date", "")))
+   
     # Оцінки
     for criterion, score in scores.items():
         if criterion in CRITERIA_ROWS:
             row = CRITERIA_ROWS[criterion]
             updates.append((row, format_score_sheet(score)))
-    
+        else:
+            # Якщо з'явився новий критерій, який ще не в маппінгу — можна логувати
+            print(f"Попередження: Критерій '{criterion}' не знайдено в CRITERIA_ROWS")
+   
     # Записуємо в таблицю
-    cell_list = []
-    for row, value in updates:
-        cell_list.append(gspread.Cell(row, column, value))
+    cell_list = [gspread.Cell(row, column, value) for row, value in updates]
     sheet.update_cells(cell_list)
