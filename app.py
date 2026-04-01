@@ -114,7 +114,7 @@ def extract_features(dialogue):
     prompt = get_full_analysis_prompt(intro, middle, ending)
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-5.4",
             temperature=0,
             messages=[
                 {"role": "system", "content": "Поверни тільки JSON"},
