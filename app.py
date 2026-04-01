@@ -168,7 +168,7 @@ def score_call(features, meta):
     scores["Встановлення контакту"] = 7.5 if elements >= 4 else 5 if elements == 3 else 2.5 if elements == 2 else 0
     scores["Спроба презентації"] = 5 if features["has_presentation"] else 0
 
-    f = features["followup_type"]
+    f = features["Домовленність про наступний контакт"]
     scores["Домовленність про наступний контакт"] = 5 if f == "exact_time" else 2.5 if f == "offer" else 0
 
     scores["Пропозиція бонусу"] = (
