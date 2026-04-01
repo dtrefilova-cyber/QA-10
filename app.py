@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import json
 import re
+from google_sheets import connect_google, write_to_google_sheet
 from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
