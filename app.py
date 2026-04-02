@@ -24,7 +24,7 @@ st.markdown(load_styles(), unsafe_allow_html=True)
 st.markdown("""
 <div class="card">
     <h2 style="margin:0;">🎧 QA-10</h2>
-    <span style="color:#aaa;">Аналіз дзвінків контакт-центру</span>
+    <span style="color:#aaa;">Аналіз дзвінків</span>
 </div>
 """, unsafe_allow_html=True)
 
