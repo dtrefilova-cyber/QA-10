@@ -204,7 +204,7 @@ def score_call(features, meta):
     )
 
     # 2. Презентація
-   scores["Спроба презентації"] = features.get("presentation_score", 0)
+scores["Спроба презентації"] = features.get("presentation_score", 0)
 
     # 3. Follow-up
     f = features.get("followup_type", "none")
