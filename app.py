@@ -18,7 +18,19 @@ LOG_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-st.title("🎧 QA-10: Аналіз дзвінків")
+st.markdown("""
+<div style="
+    background:#1c1f26;
+    padding:15px 20px;
+    border-radius:12px;
+    margin-bottom:20px;
+    border:1px solid #2a2d35;">
+    
+    <h2 style="margin:0;">🎧 QA-10</h2>
+    <span style="color:#aaa;">Аналіз дзвінків контакт-центру</span>
+
+</div>
+""", unsafe_allow_html=True)
 
 check_date = st.date_input("Дата перевірки", datetime.today())
 
