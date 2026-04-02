@@ -371,11 +371,23 @@ if st.button("🚀 Запустити аналіз", type="primary"):
 
         # 👉 запис у Google Sheets
         if google_client:
-            try:
-                sheet = google_client.open(call["ret_manager"]).sheet1
-                write_to_google_sheet(sheet, call, scores)
-            except Exception as e:
-                st.error(f"Помилка запису в Google Sheets: {e}")
+    try:
+        sheet = google_client.open(call["ret_manager"]).sheet1
+
+        # запис оцінок (як було)
+        write_to_google_sheet(sheet, call, scores)
+
+        # --- 👇 ДОДАЄМО СЮДИ ---
+        start_row = 20
+
+        existing_ids = sheet.col_values(1)[start_row-1:]
+        next_row = start_row + len(existing_ids)
+
+        sheet.update(f"A{next_row}", call["client_id"])
+        sheet.update(f"B{next_row}", comment)
+
+    except Exception as e:
+        st.error(f"Помилка запису в Google Sheets: {e}")
 
         st.session_state["results"].append({
             "scores": scores,
