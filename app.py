@@ -286,8 +286,7 @@ if st.button("🚀 Запустити аналіз", type="primary"):
                     existing_ids = sheet.col_values(1)[start_row-1:]
                     next_row = start_row + len(existing_ids)
 
-                    sheet.update(f"A{next_row}", call["client_id"])
-                    sheet.update(f"B{next_row}", comment)
+                    sheet.update(f"A{next_row}:B{next_row}", [[call["client_id"], comment]])
 
                     st.write("✅ Коментар записаний")
 
