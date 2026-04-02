@@ -62,8 +62,35 @@ def find_next_column(sheet):
 
 def write_to_google_sheet(sheet, meta, scores):
     """Записує результати в Google Sheets"""
-    column = find_next_column(sheet)
-    updates = []
+
+    try:
+        column = find_next_column(sheet)
+
+        updates = []
+
+        # 🔹 мета-дані
+        updates.extend([
+            ("A", meta["client_id"]),
+            ("B", meta["qa_manager"]),
+            ("C", meta["ret_manager"]),
+            ("D", meta["call_date"]),
+            ("E", meta["check_date"])
+        ])
+
+        # 🔹 оцінки (з 6-го рядка)
+        row = 6
+        for key, value in scores.items():
+            updates.append((f"{chr(64 + column)}{row}", value))
+            row += 1
+
+        # 🔹 запис у таблицю
+        for cell, val in updates:
+            sheet.update(cell, [[val]])
+
+        return True  # ✅ ВАЖЛИВО
+
+    except Exception as e:
+        return str(e)  # щоб бачити реальну помилку
    
     # Метадані
     updates.append((META_ROWS["call_date"], meta.get("call_date", "")))
