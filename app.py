@@ -285,29 +285,42 @@ if st.button("🚀 Запустити аналіз", type="primary"):
 # ================= OUTPUT =================
 for i, res in enumerate(st.session_state["results"]):
 
-    st.markdown(f"## 📞 Дзвінок {i+1}")
+    with st.expander(f"📞 Дзвінок {i+1}", expanded=(i == 0)):
 
-    total = sum(res["scores"].values())
+        total = sum(res["scores"].values())
 
-    st.markdown(f'<div class="card"><b>Загальний бал: {total:.1f}</b></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="card"><b>Загальний бал: {total:.1f}</b></div>', unsafe_allow_html=True)
 
-    for crit, val in res["scores"].items():
+        # 👉 одна таблиця замість 12 блоків
+        rows = ""
+        for crit, val in res["scores"].items():
 
-        cls = "bad" if val == 0 else "good" if val >= 10 else "mid"
+            color = "#ff4b4b" if val == 0 else "#4caf50" if val >= 10 else "#2a2d35"
+
+            rows += f"""
+            <tr>
+                <td style="padding:6px;">{crit}</td>
+                <td style="padding:6px; background:{color}; border-radius:6px;">
+                    {val:.1f}
+                </td>
+            </tr>
+            """
 
         st.markdown(f"""
-        <div class="{cls}">
-            <b>{crit}</b> — {val:.1f}
+        <div class="card">
+            <table style="width:100%; border-collapse:collapse;">
+                {rows}
+            </table>
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("### 💬 Коментар QA")
+        st.markdown("### 💬 Коментар QA")
 
-    st.markdown(f"""
-    <div class="card">
-        {res["comment"].replace("\n", "<br>")}
-    </div>
-    """, unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="card">
+            {res["comment"].replace("\n", "<br>")}
+        </div>
+        """, unsafe_allow_html=True)
 
 
 # ================= EXPORT =================
