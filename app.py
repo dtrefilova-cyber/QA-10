@@ -238,49 +238,67 @@ if st.button("🚀 Запустити аналіз", type="primary"):
 
     st.session_state["results"].clear()
 
-    google_client = connect_google()
+    google_client = None
+    try:
+        google_client = connect_google()
+    except Exception as e:
+        st.error(f"Google connect error: {e}")
 
     for i, call in enumerate(calls):
 
         if not call["url"]:
             continue
 
-        st.write(f"Обробка дзвінка {i+1}")
+        # 👉 spinner замість st.write
+        with st.spinner(f"Аналіз дзвінка {i+1}..."):
 
-        transcript = transcribe_audio(call["url"])
-        if not transcript:
-            st.warning("Немає транскрипції")
-            continue
+            # ================= TRANSCRIPTION =================
+            transcript = transcribe_audio(call["url"])
+            if not transcript:
+                st.warning("Немає транскрипції")
+                continue
 
-        features = extract_features(transcript)
-        scores = score_call(features, call)
-        comment = generate_qa_comment(scores, features)
+            # ================= GPT =================
+            features = extract_features(transcript)
 
-        if google_client:
-            try:
-                sheet = google_client.open(call["ret_manager"]).sheet1
-                write_to_google_sheet(sheet, call, scores)
+            if not features:
+                st.warning("Помилка аналізу GPT")
+                continue
 
-                sheet.update(f"A20:B20", [[call["client_id"], comment]])
+            # ================= SCORING =================
+            scores = score_call(features, call)
 
-                log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
-                log_sheet.append_row([
-                    call["check_date"],
-                    call["client_id"],
-                    call["ret_manager"],
-                    transcript,
-                    comment,
-                    sum(scores.values())
-                ])
+            # ================= COMMENT =================
+            comment = generate_qa_comment(scores, features)
 
-            except Exception as e:
-                st.error(f"Google error: {e}")
+            # ================= GOOGLE =================
+            if google_client:
+                try:
+                    sheet = google_client.open(call["ret_manager"]).sheet1
+                    write_to_google_sheet(sheet, call, scores)
 
-        st.session_state["results"].append({
-            "scores": scores,
-            "comment": comment
-        })
+                    # 👉 коментар (одним апдейтом)
+                    sheet.update("A20:B20", [[call["client_id"], comment]])
 
+                    # 👉 лог
+                    log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
+                    log_sheet.append_row([
+                        call["check_date"],
+                        call["client_id"],
+                        call["ret_manager"],
+                        transcript,
+                        comment,
+                        sum(scores.values())
+                    ])
+
+                except Exception as e:
+                    st.error(f"Google error: {e}")
+
+            # ================= SAVE =================
+            st.session_state["results"].append({
+                "scores": scores,
+                "comment": comment
+            })
 
 # ================= OUTPUT =================
 for i, res in enumerate(st.session_state["results"]):
