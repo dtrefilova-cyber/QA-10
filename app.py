@@ -12,7 +12,7 @@ from prompts import get_full_analysis_prompt
 # ================= CONFIG =================
 DEEPGRAM_API_KEY = st.secrets["DEEPGRAM_API_KEY"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-LOG_SHEET_ID = st.secrets["LOG_SHEET_ID"]
+LOG_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
