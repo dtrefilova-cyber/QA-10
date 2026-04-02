@@ -1,4 +1,3 @@
-from styles import load_styles
 import streamlit as st
 import pandas as pd
 import requests
@@ -9,7 +8,7 @@ from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
 from prompts import get_full_analysis_prompt
-
+from styles import load_styles
 
 # ================= CONFIG =================
 DEEPGRAM_API_KEY = st.secrets["DEEPGRAM_API_KEY"]
@@ -18,17 +17,14 @@ LOG_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
+# ================= STYLE =================
+st.markdown(load_styles(), unsafe_allow_html=True)
+
+# ================= HEADER =================
 st.markdown("""
-<div style="
-    background:#1c1f26;
-    padding:15px 20px;
-    border-radius:12px;
-    margin-bottom:20px;
-    border:1px solid #2a2d35;">
-    
+<div class="card">
     <h2 style="margin:0;">🎧 QA-10</h2>
     <span style="color:#aaa;">Аналіз дзвінків контакт-центру</span>
-
 </div>
 """, unsafe_allow_html=True)
 
@@ -231,7 +227,7 @@ def generate_qa_comment(scores, features):
     if scores["Утримання клієнта"] < 20:
         comments.append("Слабке утримання клієнта")
 
-    return "\n".join(comments) if comments else "Все виконано добре"
+    return "\n".join([f"- {c}" for c in comments]) if comments else "Все виконано добре"
 
 
 # ================= RUN =================
@@ -242,96 +238,44 @@ if st.button("🚀 Запустити аналіз", type="primary"):
 
     st.session_state["results"].clear()
 
-    # 🔹 підключення до Google
-    google_client = None
-    try:
-        google_client = connect_google()
-        st.success("Google підключено")
-    except Exception as e:
-        st.error(f"Google connect error: {e}")
+    google_client = connect_google()
 
     for i, call in enumerate(calls):
 
         if not call["url"]:
             continue
 
-        st.markdown(f"### 🔄 Обробка дзвінка {i+1}")
+        st.write(f"Обробка дзвінка {i+1}")
 
-        # ================= TRANSCRIPTION =================
         transcript = transcribe_audio(call["url"])
-
         if not transcript:
-            st.warning("❌ Немає транскрипції")
+            st.warning("Немає транскрипції")
             continue
 
-        # ================= GPT =================
         features = extract_features(transcript)
-
-        if not features:
-            st.warning("❌ GPT не повернув features")
-            continue
-
-        # ================= SCORING =================
         scores = score_call(features, call)
-
-        # ================= COMMENT =================
         comment = generate_qa_comment(scores, features)
 
-        # ================= DEBUG =================
-        st.write("==== DEBUG ====")
-        st.write("Client ID:", call["client_id"])
-        st.write("Transcript len:", len(transcript))
-        st.write("Scores:", scores)
-        st.write("Comment:", comment)
-
-        # ================= GOOGLE =================
         if google_client:
             try:
-                st.write("➡️ Пишемо в основну таблицю")
-
                 sheet = google_client.open(call["ret_manager"]).sheet1
                 write_to_google_sheet(sheet, call, scores)
 
-                st.write("✅ Основна таблиця записана")
+                sheet.update(f"A20:B20", [[call["client_id"], comment]])
 
-                # 👉 запис коментаря (A/B з 20 рядка)
-                try:
-                    start_row = 20
-                    existing_ids = sheet.col_values(1)[start_row-1:]
-                    next_row = start_row + len(existing_ids)
-
-                    sheet.update(f"A{next_row}:B{next_row}", [[call["client_id"], comment]])
-
-                    st.write("✅ Коментар записаний")
-
-                except Exception as e:
-                    st.error(f"Коментар не записався: {e}")
-
-                # 👉 LOG таблиця
-                try:
-                    st.write("➡️ Пишемо в LOG")
-
-                    log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
-
-                    if transcript and len(transcript.strip()) > 10:
-                        log_sheet.append_row([
-                            call["check_date"],
-                            call["client_id"],
-                            call["ret_manager"],
-                            transcript,
-                            comment,
-                            sum(scores.values())
-                        ])
-
-                        st.write("✅ LOG записаний")
-
-                except Exception as e:
-                    st.error(f"LOG error: {e}")
+                log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
+                log_sheet.append_row([
+                    call["check_date"],
+                    call["client_id"],
+                    call["ret_manager"],
+                    transcript,
+                    comment,
+                    sum(scores.values())
+                ])
 
             except Exception as e:
-                st.error(f"Google write error: {e}")
+                st.error(f"Google error: {e}")
 
-        # ================= SAVE RESULT =================
         st.session_state["results"].append({
             "scores": scores,
             "comment": comment
@@ -339,32 +283,36 @@ if st.button("🚀 Запустити аналіз", type="primary"):
 
 
 # ================= OUTPUT =================
-if not st.session_state["results"]:
-    st.warning("Немає результатів для відображення")
-
 for i, res in enumerate(st.session_state["results"]):
 
-    st.markdown(f"## 📊 Дзвінок {i+1}")
+    st.markdown(f"## 📞 Дзвінок {i+1}")
 
-    # 🔹 таблиця оцінок
-    df = pd.DataFrame(res["scores"].items(), columns=["Критерій", "Оцінка"])
-
-    # 👉 форматування (1 знак після коми)
-    df["Оцінка"] = df["Оцінка"].apply(lambda x: f"{float(x):.1f}")
-
-    st.table(df)
-
-    # 🔹 загальний бал
     total = sum(res["scores"].values())
-    st.success(f"Загальний бал: {total:.1f}")
 
-    # 🔹 коментар
-    st.markdown("### Коментар QA")
-    st.write(res["comment"])
+    st.markdown(f'<div class="card"><b>Загальний бал: {total:.1f}</b></div>', unsafe_allow_html=True)
+
+    for crit, val in res["scores"].items():
+
+        cls = "bad" if val == 0 else "good" if val >= 10 else "mid"
+
+        st.markdown(f"""
+        <div class="{cls}">
+            <b>{crit}</b> — {val:.1f}
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("### 💬 Коментар QA")
+
+    st.markdown(f"""
+    <div class="card">
+        {res["comment"].replace("\n", "<br>")}
+    </div>
+    """, unsafe_allow_html=True)
 
 
 # ================= EXPORT =================
 if st.session_state["results"]:
+
     xls = BytesIO()
 
     with pd.ExcelWriter(xls, engine="openpyxl") as writer:
@@ -374,4 +322,8 @@ if st.session_state["results"]:
 
     xls.seek(0)
 
-    st.download_button("📥 Excel", xls)
+    st.download_button(
+        label="📥 Завантажити Excel",
+        data=xls,
+        file_name="qa_results.xlsx"
+    )
