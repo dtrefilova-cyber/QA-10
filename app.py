@@ -228,38 +228,97 @@ if st.button("🚀 Запустити аналіз", type="primary"):
 
     st.session_state["results"].clear()
 
-    google_client = connect_google()
+    # 🔹 підключення до Google
+    google_client = None
+    try:
+        google_client = connect_google()
+        st.success("Google підключено")
+    except Exception as e:
+        st.error(f"Google connect error: {e}")
 
-    for call in calls:
+    for i, call in enumerate(calls):
+
         if not call["url"]:
             continue
 
+        st.markdown(f"### 🔄 Обробка дзвінка {i+1}")
+
+        # ================= TRANSCRIPTION =================
         transcript = transcribe_audio(call["url"])
+
         if not transcript:
+            st.warning("❌ Немає транскрипції")
             continue
 
+        # ================= GPT =================
         features = extract_features(transcript)
+
+        if not features:
+            st.warning("❌ GPT не повернув features")
+            continue
+
+        # ================= SCORING =================
         scores = score_call(features, call)
+
+        # ================= COMMENT =================
         comment = generate_qa_comment(scores, features)
 
-        # Google
-        try:
-            sheet = google_client.open(call["ret_manager"]).sheet1
-            write_to_google_sheet(sheet, call, scores)
+        # ================= DEBUG =================
+        st.write("==== DEBUG ====")
+        st.write("Client ID:", call["client_id"])
+        st.write("Transcript len:", len(transcript))
+        st.write("Scores:", scores)
+        st.write("Comment:", comment)
 
-            log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
-            log_sheet.append_row([
-                call["check_date"],
-                call["client_id"],
-                call["ret_manager"],
-                transcript,
-                comment,
-                sum(scores.values())
-            ])
+        # ================= GOOGLE =================
+        if google_client:
+            try:
+                st.write("➡️ Пишемо в основну таблицю")
 
-        except Exception as e:
-            st.error(f"Google error: {e}")
+                sheet = google_client.open(call["ret_manager"]).sheet1
+                write_to_google_sheet(sheet, call, scores)
 
+                st.write("✅ Основна таблиця записана")
+
+                # 👉 запис коментаря (A/B з 20 рядка)
+                try:
+                    start_row = 20
+                    existing_ids = sheet.col_values(1)[start_row-1:]
+                    next_row = start_row + len(existing_ids)
+
+                    sheet.update(f"A{next_row}", call["client_id"])
+                    sheet.update(f"B{next_row}", comment)
+
+                    st.write("✅ Коментар записаний")
+
+                except Exception as e:
+                    st.error(f"Коментар не записався: {e}")
+
+                # 👉 LOG таблиця
+                try:
+                    st.write("➡️ Пишемо в LOG")
+
+                    log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
+
+                    if transcript and len(transcript.strip()) > 10:
+                        log_sheet.append_row([
+                            call["check_date"],
+                            call["client_id"],
+                            call["ret_manager"],
+                            transcript,
+                            comment,
+                            sum(scores.values())
+                        ])
+
+                        st.write("✅ LOG записаний")
+
+                except Exception as e:
+                    st.error(f"LOG error: {e}")
+
+            except Exception as e:
+                st.error(f"Google write error: {e}")
+
+        # ================= SAVE RESULT =================
         st.session_state["results"].append({
             "scores": scores,
             "comment": comment
@@ -267,9 +326,27 @@ if st.button("🚀 Запустити аналіз", type="primary"):
 
 
 # ================= OUTPUT =================
-for res in st.session_state["results"]:
+if not st.session_state["results"]:
+    st.warning("Немає результатів для відображення")
+
+for i, res in enumerate(st.session_state["results"]):
+
+    st.markdown(f"## 📊 Дзвінок {i+1}")
+
+    # 🔹 таблиця оцінок
     df = pd.DataFrame(res["scores"].items(), columns=["Критерій", "Оцінка"])
+
+    # 👉 форматування (1 знак після коми)
+    df["Оцінка"] = df["Оцінка"].apply(lambda x: f"{float(x):.1f}")
+
     st.table(df)
+
+    # 🔹 загальний бал
+    total = sum(res["scores"].values())
+    st.success(f"Загальний бал: {total:.1f}")
+
+    # 🔹 коментар
+    st.markdown("### Коментар QA")
     st.write(res["comment"])
 
 
