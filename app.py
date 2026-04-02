@@ -8,7 +8,6 @@ from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
 from prompts import get_full_analysis_prompt
-from styles import load_styles
 
 # ================= CONFIG =================
 DEEPGRAM_API_KEY = st.secrets["DEEPGRAM_API_KEY"]
@@ -16,9 +15,6 @@ OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 LOG_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 
 client = OpenAI(api_key=OPENAI_API_KEY)
-
-# ================= STYLE =================
-st.markdown(load_styles(), unsafe_allow_html=True)
 
 # ================= HEADER =================
 st.markdown("""
@@ -305,40 +301,23 @@ for i, res in enumerate(st.session_state["results"]):
 
     with st.expander(f"📞 Дзвінок {i+1}", expanded=(i == 0)):
 
+        # 🔹 таблиця як треба
+        df = pd.DataFrame(
+            list(res["scores"].items()),
+            columns=["Критерій", "Оцінка"]
+        )
+
+        df["Оцінка"] = df["Оцінка"].apply(lambda x: round(float(x), 1))
+
+        st.dataframe(df, use_container_width=True)
+
+        # 🔹 загальний бал
         total = sum(res["scores"].values())
+        st.success(f"Загальний бал: {total:.1f}")
 
-        st.markdown(f'<div class="card"><b>Загальний бал: {total:.1f}</b></div>', unsafe_allow_html=True)
-
-        # 👉 одна таблиця замість 12 блоків
-        rows = ""
-        for crit, val in res["scores"].items():
-
-            color = "#ff4b4b" if val == 0 else "#4caf50" if val >= 10 else "#2a2d35"
-
-            rows += f"""
-            <tr>
-                <td style="padding:6px;">{crit}</td>
-                <td style="padding:6px; background:{color}; border-radius:6px;">
-                    {val:.1f}
-                </td>
-            </tr>
-            """
-
-        st.markdown(f"""
-        <div class="card">
-            <table style="width:100%; border-collapse:collapse;">
-                {rows}
-            </table>
-        </div>
-        """, unsafe_allow_html=True)
-
+        # 🔹 коментар
         st.markdown("### 💬 Коментар QA")
-
-        st.markdown(f"""
-        <div class="card">
-            {res["comment"].replace("\n", "<br>")}
-        </div>
-        """, unsafe_allow_html=True)
+        st.write(res["comment"])
 
 
 # ================= EXPORT =================
