@@ -105,11 +105,11 @@ def transcribe_audio(audio_url):
 
         data = response.json()
 
-        try:
-    transcript = data["results"]["channels"][0]["alternatives"][0]["transcript"]
+    try:
+        transcript = data["results"]["channels"][0]["alternatives"][0]["transcript"]
 except:
-    st.error("Не вдалося отримати транскрипцію")
-    return None
+        st.error("Не вдалося отримати транскрипцію")
+        return None
         if not transcript.strip():
             st.warning("Порожня транскрипція")
             return None
