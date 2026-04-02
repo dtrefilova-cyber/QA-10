@@ -105,16 +105,14 @@ def transcribe_audio(audio_url):
 
         data = response.json()
 
-    try:
+        # ✅ правильний доступ до транскрипції
         transcript = data["results"]["channels"][0]["alternatives"][0]["transcript"]
-except Exception as e:
-        st.error(f"Помилка транскрипції: {e}")
-        return None
-        if not transcript.strip():
+
+        if not transcript or not transcript.strip():
             st.warning("Порожня транскрипція")
             return None
 
-        # 👉 очищаємо текст
+        # ✅ чистка тексту
         transcript = clean_transcript(transcript)
 
         return transcript
@@ -133,6 +131,8 @@ def extract_segments(dialogue):
 
     return intro, middle, ending
 
+
+# ================= GPT =================
 def extract_features(dialogue):
     intro, middle, ending = extract_segments(dialogue)
     prompt = get_full_analysis_prompt(intro, middle, ending)
@@ -161,7 +161,7 @@ def extract_features(dialogue):
         st.error(f"GPT error: {e}")
         return {}
 
-    # дефолти
+    # ✅ дефолти (захист від падінь)
     defaults = {
         "manager_name_present": False,
         "manager_position_present": False,
