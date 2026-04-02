@@ -104,8 +104,11 @@ def transcribe_audio(audio_url):
 
         data = response.json()
 
-        transcript = data["results"]["channels"][0]["alternatives"][0]["transcript"]
-
+        try:
+    transcript = data["results"]["channels"][0]["alternatives"][0]["transcript"]
+except:
+    st.error("Не вдалося отримати транскрипцію")
+    return None
         if not transcript.strip():
             st.warning("Порожня транскрипція")
             return None
@@ -200,10 +203,10 @@ def score_call(features, meta):
     )
 
     # 2. Презентація
-    scores["Спроба презентації"] = 5 if features["has_presentation"] else 0
+   scores["Спроба презентації"] = features.get("presentation_score", 0)
 
     # 3. Follow-up
-    f = features["followup_type"]
+    f = features.get("followup_type", "none")
     scores["Домовленість про наступний контакт"] = (
         5 if f == "exact_time" else
         2.5 if f == "offer" else
@@ -211,7 +214,7 @@ def score_call(features, meta):
     )
 
     # 4. Бонус (захист від дублювання)
-    conditions = set(features["bonus_conditions"])
+    conditions = set(features.get("bonus_conditions", []))
     scores["Пропозиція бонусу"] = (
         0 if not features["bonus_offered"]
         else 10 if len(conditions) >= 2
@@ -244,7 +247,7 @@ def score_call(features, meta):
     comment = meta["manager_comment"].strip()
     scores["Оформлення картки"] = (
         0 if not comment else
-        2.5 if len(comment.split()) < 5 else
+        2.5 if len(comment.split()) < 4 else
         5
     )
 
@@ -263,24 +266,20 @@ def score_call(features, meta):
     lvl = features["continuation_level"]
 
     if features["client_wants_to_end"]:
-        # клієнт хоче завершити
-        scores["Утримання клієнта"] = (
-            20 if lvl == "strong" else
-            15 if lvl == "weak" else
-            10
-        )
-    else:
-        # менеджер сам зливає або не утримує
-        scores["Утримання клієнта"] = (
-            10 if lvl == "weak" else
-            0
-        )
+    scores["Утримання клієнта"] = (
+        20 if lvl == "strong" else
+        15 if lvl == "weak" else
+        10
+    )
+else:
+    scores["Утримання клієнта"] = (
+        20 if lvl == "strong" else
+        15 if lvl == "weak" else
+        10
+    )
 
     return scores
 
-# ================= EXPLANATION =================
-def explain_scores(scores):
-    return {k: str(v) for k, v in scores.items()}
 
 # ================= COMMENT =================
 def generate_qa_comment(scores, features):
