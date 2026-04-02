@@ -1,3 +1,4 @@
+from styles import load_styles
 import streamlit as st
 import pandas as pd
 import requests
@@ -8,6 +9,7 @@ from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
 from prompts import get_full_analysis_prompt
+
 
 # ================= CONFIG =================
 DEEPGRAM_API_KEY = st.secrets["DEEPGRAM_API_KEY"]
