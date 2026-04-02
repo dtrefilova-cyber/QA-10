@@ -107,8 +107,8 @@ def transcribe_audio(audio_url):
 
     try:
         transcript = data["results"]["channels"][0]["alternatives"][0]["transcript"]
-except:
-        st.error("Не вдалося отримати транскрипцію")
+except Exception as e:
+        st.error(f"Помилка транскрипції: {e}")
         return None
         if not transcript.strip():
             st.warning("Порожня транскрипція")
