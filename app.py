@@ -101,85 +101,66 @@ def transcribe_audio(url):
             return None
 
         data = r.json()
-
         channels = data.get("results", {}).get("channels", [])
         if not channels:
             return None
 
-        dialogue = []
+        all_words = []
 
+        # 1. збираємо всі слова з обох каналів
         for i, ch in enumerate(channels):
             alt = ch.get("alternatives", [])
             if not alt:
                 continue
 
             words = alt[0].get("words", [])
-            speaker_name = "Менеджер" if i == 0 else "Клієнт"
+            speaker = "Менеджер" if i == 0 else "Клієнт"
 
-            # Якщо є слова з таймкодами — збираємо більш точний діалог
-            if words:
-                current_phrase = []
-                last_end = None
+            for w in words:
+                all_words.append({
+                    "word": w.get("word", ""),
+                    "start": w.get("start", 0),
+                    "end": w.get("end", 0),
+                    "speaker": speaker
+                })
 
-                for w in words:
-                    word = w.get("word", "")
-                    start = w.get("start")
-                    end = w.get("end")
+        if not all_words:
+            return None
 
-                    # якщо пауза — закриваємо фразу
-                    if last_end and start and start - last_end > 1.0:
-                        if current_phrase:
-                            dialogue.append(f"{speaker_name}: {' '.join(current_phrase)}")
-                            current_phrase = []
+        # 2. сортуємо по часу
+        all_words.sort(key=lambda x: x["start"])
 
-                    current_phrase.append(word)
-                    last_end = end
+        # 3. збираємо у фрази
+        dialogue = []
+        current_speaker = None
+        current_phrase = []
+        last_end = 0
 
+        for w in all_words:
+            speaker = w["speaker"]
+
+            # якщо змінився спікер або є пауза — нова фраза
+            if (
+                speaker != current_speaker
+                or w["start"] - last_end > 1.0
+            ):
                 if current_phrase:
-                    dialogue.append(f"{speaker_name}: {' '.join(current_phrase)}")
+                    dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
+                    current_phrase = []
 
-            else:
-                # fallback якщо немає words
-                text = alt[0].get("transcript", "")
-                if text:
-                    dialogue.append(f"{speaker_name}: {text}")
+                current_speaker = speaker
+
+            current_phrase.append(w["word"])
+            last_end = w["end"]
+
+        # остання фраза
+        if current_phrase:
+            dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
 
         return "\n".join(dialogue)
 
     except Exception as e:
         st.error(f"Transcription exception: {str(e)}")
-        return None
-
-        data = r.json()
-        words = data["results"]["channels"][0]["alternatives"][0].get("words", [])
-
-        if not words:
-            return None
-
-        dialogue = []
-        current_speaker = None
-        current_text = []
-
-        for w in words:
-            speaker = w.get("speaker", 0)
-            if speaker != current_speaker:
-                if current_text:
-                    dialogue.append(f"Спікер {current_speaker}: {' '.join(current_text)}")
-                current_text = []
-                current_speaker = speaker
-            current_text.append(w["word"])
-
-        if current_text:
-            dialogue.append(f"Спікер {current_speaker}: {' '.join(current_text)}")
-
-        text = "\n".join(dialogue)
-        if not text:
-            return None
-
-        return clean_transcript(text)
-
-    except Exception as e:
-        st.error(f"Transcription error: {e}")
         return None
 
 
