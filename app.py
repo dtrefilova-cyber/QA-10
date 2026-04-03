@@ -36,25 +36,21 @@ for row in range(5):
     col1, col2 = st.columns(2)
     for col, idx in zip([col1, col2], [row * 2 + 1, row * 2 + 2]):
         with col.expander(f"📞 Дзвінок {idx}"):
-
             audio_url = st.text_input("Посилання", key=f"url_{idx}")
             qa_manager = st.selectbox("QA", qa_managers_list, key=f"qa_{idx}")
             ret_manager = st.text_input("Менеджер", key=f"ret_{idx}")
             client_id = st.text_input("ID", key=f"client_{idx}")
             call_date = st.text_input("Дата", key=f"date_{idx}")
-
             bonus_check = st.selectbox(
                 "Бонус",
                 ["правильно нараховано", "помилково нараховано", "не потрібно"],
                 key=f"bonus_{idx}"
             )
-
             repeat_call = st.selectbox(
                 "Передзвон",
                 ["так, був протягом години", "так, був протягом 2 годин", "ні, не було"],
                 key=f"repeat_{idx}"
             )
-
             manager_comment = st.text_area("Коментар", key=f"comment_{idx}")
             speech_score = st.selectbox("Мовлення", [2.5, 0], key=f"speech_{idx}")
 
@@ -86,7 +82,6 @@ def clean_transcript(text):
 def transcribe_audio(url):
     if not url:
         return None
-
     try:
         r = requests.post(
             "https://api.deepgram.com/v1/listen",
@@ -99,7 +94,6 @@ def transcribe_audio(url):
             },
             json={"url": url}
         )
-
         if r.status_code != 200:
             st.error(f"Deepgram error: {r.text}")
             return None
@@ -107,29 +101,26 @@ def transcribe_audio(url):
         data = r.json()
         words = data["results"]["channels"][0]["alternatives"][0].get("words", [])
 
-if not words:
-    return None
+        if not words:
+            return None
 
-dialogue = []
-current_speaker = None
-current_text = []
+        dialogue = []
+        current_speaker = None
+        current_text = []
 
-for w in words:
-    speaker = w.get("speaker", 0)
+        for w in words:
+            speaker = w.get("speaker", 0)
+            if speaker != current_speaker:
+                if current_text:
+                    dialogue.append(f"Спікер {current_speaker}: {' '.join(current_text)}")
+                current_text = []
+                current_speaker = speaker
+            current_text.append(w["word"])
 
-    if speaker != current_speaker:
         if current_text:
             dialogue.append(f"Спікер {current_speaker}: {' '.join(current_text)}")
-        current_text = []
-        current_speaker = speaker
 
-    current_text.append(w["word"])
-
-if current_text:
-    dialogue.append(f"Спікер {current_speaker}: {' '.join(current_text)}")
-
-text = "\n".join(dialogue)
-
+        text = "\n".join(dialogue)
         if not text:
             return None
 
@@ -159,15 +150,12 @@ def extract_features(dialogue):
                 {"role": "user", "content": prompt}
             ]
         )
-
         text = res.choices[0].message.content
         match = re.search(r"\{[\s\S]*\}", text)
-
         if not match:
             return {}
 
         features = json.loads(match.group())
-
     except Exception as e:
         st.error(f"GPT error: {e}")
         return {}
@@ -230,6 +218,7 @@ def score_call(f, meta):
 
     lvl = f.get("continuation_level", "none")
     s["Утримання клієнта"] = 20 if lvl == "strong" else 15 if lvl == "weak" else 10
+
     s["Робота із запереченнями"] = 10 if not f["objection_detected"] else (10 if lvl == "strong" else 5 if lvl == "weak" else 0)
 
     return s
@@ -238,16 +227,12 @@ def score_call(f, meta):
 # ================= COMMENT =================
 def generate_qa_comment(scores, features):
     comments = []
-
     if scores["Спроба презентації"] == 0:
         comments.append("Спроба презентації — відсутня")
-
     if scores["Домовленість про наступний контакт"] < 5:
         comments.append("Немає точного часу передзвону")
-
     if scores["Пропозиція бонусу"] < 10:
         comments.append("Недостатньо умов бонусу")
-
     if scores["Утримання клієнта"] < 20:
         comments.append("Слабке утримання клієнта")
 
@@ -259,9 +244,7 @@ if "results" not in st.session_state:
     st.session_state["results"] = []
 
 if st.button("🚀 Запустити аналіз", type="primary"):
-
     st.session_state["results"].clear()
-
     google_client = None
     try:
         google_client = connect_google()
@@ -269,13 +252,10 @@ if st.button("🚀 Запустити аналіз", type="primary"):
         st.error(f"Google connect error: {e}")
 
     for i, call in enumerate(calls):
-
         if not call["url"]:
             continue
 
-        # 👉 spinner замість st.write
         with st.spinner(f"Аналіз дзвінка {i+1}..."):
-
             # ================= TRANSCRIPTION =================
             transcript = transcribe_audio(call["url"])
             if not transcript:
@@ -284,7 +264,6 @@ if st.button("🚀 Запустити аналіз", type="primary"):
 
             # ================= GPT =================
             features = extract_features(transcript)
-
             if not features:
                 st.warning("Помилка аналізу GPT")
                 continue
@@ -300,22 +279,19 @@ if st.button("🚀 Запустити аналіз", type="primary"):
                 try:
                     sheet = google_client.open(call["ret_manager"]).sheet1
                     write_to_google_sheet(sheet, call, scores)
-
-                    # 👉 коментар 
                     sheet.append_row([call["client_id"], comment])
 
-                    # 👉 лог
+                    # лог
                     log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
                     log_sheet.append_row([
                         call["check_date"],
                         call["client_id"],
                         call["ret_manager"],
-                        call["url"],         
+                        call["url"],
                         transcript,
                         comment,
                         sum(scores.values())
                     ])
-
                 except Exception as e:
                     st.error(f"Google error: {e}")
 
@@ -325,40 +301,31 @@ if st.button("🚀 Запустити аналіз", type="primary"):
                 "comment": comment
             })
 
+
 # ================= OUTPUT =================
 for i, res in enumerate(st.session_state["results"]):
-
     with st.expander(f"📞 Дзвінок {i+1}", expanded=(i == 0)):
-
-        # 🔹 таблиця як треба
         df = pd.DataFrame(
             list(res["scores"].items()),
             columns=["Критерій", "Оцінка"]
         )
-
         df["Оцінка"] = df["Оцінка"].apply(lambda x: f"{float(x):.1f}")
-
         st.table(df)
 
-        # 🔹 загальний бал
         total = sum(res["scores"].values())
         st.success(f"Загальний бал: {total:.1f}")
 
-        # 🔹 коментар
         st.markdown("### 💬 Коментар QA")
         st.write(res["comment"])
 
 
 # ================= EXPORT =================
 if st.session_state["results"]:
-
     xls = BytesIO()
-
     with pd.ExcelWriter(xls, engine="openpyxl") as writer:
         for i, res in enumerate(st.session_state["results"]):
             df = pd.DataFrame(res["scores"].items(), columns=["Критерій", "Оцінка"])
             df.to_excel(writer, sheet_name=f"Call_{i+1}", index=False)
-
     xls.seek(0)
 
     st.download_button(
