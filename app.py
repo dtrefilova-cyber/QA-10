@@ -91,7 +91,12 @@ def transcribe_audio(url):
         r = requests.post(
             "https://api.deepgram.com/v1/listen",
             headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"},
-            params={"model": "nova-3", "language": "uk"},
+            params={
+                "model": "nova-3",
+                "smart_format": "true",
+                "diarize": "true",
+                "detect_language": "true"
+            },
             json={"url": url}
         )
 
@@ -100,7 +105,30 @@ def transcribe_audio(url):
             return None
 
         data = r.json()
-        text = data["results"]["channels"][0]["alternatives"][0]["transcript"]
+        words = data["results"]["channels"][0]["alternatives"][0].get("words", [])
+
+if not words:
+    return None
+
+dialogue = []
+current_speaker = None
+current_text = []
+
+for w in words:
+    speaker = w.get("speaker", 0)
+
+    if speaker != current_speaker:
+        if current_text:
+            dialogue.append(f"Спікер {current_speaker}: {' '.join(current_text)}")
+        current_text = []
+        current_speaker = speaker
+
+    current_text.append(w["word"])
+
+if current_text:
+    dialogue.append(f"Спікер {current_speaker}: {' '.join(current_text)}")
+
+text = "\n".join(dialogue)
 
         if not text:
             return None
