@@ -82,6 +82,7 @@ def clean_transcript(text):
 def transcribe_audio(url):
     if not url:
         return None
+
     try:
         r = requests.post(
             "https://api.deepgram.com/v1/listen",
@@ -89,14 +90,65 @@ def transcribe_audio(url):
             params={
                 "model": "nova-3",
                 "smart_format": "true",
-                "diarize": "true",
-                "detect_language": "true"
+                "detect_language": "true",
+                "multichannel": "true"
             },
             json={"url": url}
         )
+
         if r.status_code != 200:
             st.error(f"Deepgram error: {r.text}")
             return None
+
+        data = r.json()
+
+        channels = data.get("results", {}).get("channels", [])
+        if not channels:
+            return None
+
+        dialogue = []
+
+        for i, ch in enumerate(channels):
+            alt = ch.get("alternatives", [])
+            if not alt:
+                continue
+
+            words = alt[0].get("words", [])
+            speaker_name = "Менеджер" if i == 0 else "Клієнт"
+
+            # Якщо є слова з таймкодами — збираємо більш точний діалог
+            if words:
+                current_phrase = []
+                last_end = None
+
+                for w in words:
+                    word = w.get("word", "")
+                    start = w.get("start")
+                    end = w.get("end")
+
+                    # якщо пауза — закриваємо фразу
+                    if last_end and start and start - last_end > 1.0:
+                        if current_phrase:
+                            dialogue.append(f"{speaker_name}: {' '.join(current_phrase)}")
+                            current_phrase = []
+
+                    current_phrase.append(word)
+                    last_end = end
+
+                if current_phrase:
+                    dialogue.append(f"{speaker_name}: {' '.join(current_phrase)}")
+
+            else:
+                # fallback якщо немає words
+                text = alt[0].get("transcript", "")
+                if text:
+                    dialogue.append(f"{speaker_name}: {text}")
+
+        return "\n".join(dialogue)
+
+    except Exception as e:
+        st.error(f"Transcription exception: {str(e)}")
+        return None
 
         data = r.json()
         words = data["results"]["channels"][0]["alternatives"][0].get("words", [])
