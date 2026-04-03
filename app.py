@@ -273,7 +273,7 @@ if st.button("🚀 Запустити аналіз", type="primary"):
                     sheet = google_client.open(call["ret_manager"]).sheet1
                     write_to_google_sheet(sheet, call, scores)
 
-                    # 👉 коментар (одним апдейтом)
+                    # 👉 коментар 
                     sheet.update("A20:B20", [[call["client_id"], comment]])
 
                     # 👉 лог
@@ -282,6 +282,7 @@ if st.button("🚀 Запустити аналіз", type="primary"):
                         call["check_date"],
                         call["client_id"],
                         call["ret_manager"],
+                        call["url"],         
                         transcript,
                         comment,
                         sum(scores.values())
