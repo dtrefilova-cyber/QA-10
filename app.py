@@ -274,7 +274,7 @@ if st.button("🚀 Запустити аналіз", type="primary"):
                     write_to_google_sheet(sheet, call, scores)
 
                     # 👉 коментар 
-                    sheet.update("A20:B20", [[call["client_id"], comment]])
+                    sheet.append_row([call["client_id"], comment])
 
                     # 👉 лог
                     log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
