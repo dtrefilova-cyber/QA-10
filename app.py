@@ -102,21 +102,18 @@ def transcribe_audio(url):
 
         data = r.json()
         channels = data.get("results", {}).get("channels", [])
-        if not channels:
-            return None
 
         all_words = []
 
-        # 1. збираємо всі слова з обох каналів
+        # збираємо всі слова
         for i, ch in enumerate(channels):
             alt = ch.get("alternatives", [])
             if not alt:
                 continue
 
-            words = alt[0].get("words", [])
             speaker = "Менеджер" if i == 0 else "Клієнт"
 
-            for w in words:
+            for w in alt[0].get("words", []):
                 all_words.append({
                     "word": w.get("word", ""),
                     "start": w.get("start", 0),
@@ -127,33 +124,32 @@ def transcribe_audio(url):
         if not all_words:
             return None
 
-        # 2. сортуємо по часу
+        # сортуємо по часу
         all_words.sort(key=lambda x: x["start"])
 
-        # 3. збираємо у фрази
         dialogue = []
-        current_speaker = None
+        current_speaker = all_words[0]["speaker"]
         current_phrase = []
-        last_end = 0
+        last_end = all_words[0]["end"]
 
         for w in all_words:
             speaker = w["speaker"]
 
-            # якщо змінився спікер або є пауза — нова фраза
-            if (
-                speaker != current_speaker
-                or w["start"] - last_end > 1.0
-            ):
+            pause = w["start"] - last_end
+
+            # нова репліка тільки якщо:
+            # 1. змінився спікер
+            # 2. або дуже довга пауза (>1.5 сек)
+            if speaker != current_speaker or pause > 1.5:
                 if current_phrase:
                     dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
-                    current_phrase = []
 
+                current_phrase = []
                 current_speaker = speaker
 
             current_phrase.append(w["word"])
             last_end = w["end"]
 
-        # остання фраза
         if current_phrase:
             dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
 
