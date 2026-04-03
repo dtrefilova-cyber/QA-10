@@ -309,7 +309,7 @@ for i, res in enumerate(st.session_state["results"]):
 
         df["Оцінка"] = df["Оцінка"].apply(lambda x: round(float(x), 1))
 
-        st.dataframe(df, use_container_width=True)
+        st.table(df)
 
         # 🔹 загальний бал
         total = sum(res["scores"].values())
