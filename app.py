@@ -307,7 +307,7 @@ for i, res in enumerate(st.session_state["results"]):
             columns=["Критерій", "Оцінка"]
         )
 
-        df["Оцінка"] = df["Оцінка"].apply(lambda x: round(float(x), 1))
+        df["Оцінка"] = df["Оцінка"].apply(lambda x: round(float(x):.1f}")
 
         st.table(df)
 
