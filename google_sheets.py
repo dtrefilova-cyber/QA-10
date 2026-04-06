@@ -16,7 +16,7 @@ def connect_google():
     return gspread.authorize(creds)
 
 
-# 🔹 Маппінг критеріїв (залишаємо, може знадобитись)
+# 🔹 Маппінг критеріїв (де і як вносяться оцінки)
 CRITERIA_ROWS = {
     "Встановлення контакту": 5,
     "Спроба презентації": 6,
@@ -69,7 +69,7 @@ def write_to_google_sheet(sheet, meta, scores):
 
         updates = []
 
-        # 🔹 мета-дані (рядки 1–5)
+        # 🔹 мета-дані (рядки 1–4)
         updates.extend([
             (f"{col_letter}1", meta.get("call_date", "")),     # 1 — дата дзвінка
             (f"{col_letter}2", meta.get("client_id", "")),     # 2 — айді клієнта
@@ -77,11 +77,11 @@ def write_to_google_sheet(sheet, meta, scores):
             (f"{col_letter}4", meta.get("check_date", ""))     # 4 — дата перевірки
         ])
 
-        # 🔹 оцінки (рядки 6+)
-        row = 6
+        # 🔹 оцінки (рядки 5+)
         for key, value in scores.items():
-            updates.append((f"{col_letter}{row}", format_score_sheet(value)))
-            row += 1
+            if key in CRITERIA_ROWS:
+                row = CRITERIA_ROWS[key]
+                updates.append((f"{col_letter}{row}", format_score_sheet(value)))
 
         # 🔹 запис у таблицю
         for cell, val in updates:
