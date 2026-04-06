@@ -279,9 +279,9 @@ def apply_defaults(features):
     return features
 
 
-def extract_features_openai(dialogue):
+def extract_features_openai(dialogue, comment):
     intro, middle, ending = extract_segments(dialogue)
-    prompt = get_full_analysis_prompt(intro, middle, ending)
+    prompt = get_full_analysis_prompt(intro, middle, ending, comment)
 
     try:
         res = client.chat.completions.create(
@@ -304,9 +304,9 @@ def extract_features_openai(dialogue):
         return {}
 
 
-def extract_features_claude(dialogue):
+def extract_features_claude(dialogue, comment):
     intro, middle, ending = extract_segments(dialogue)
-    prompt = get_full_analysis_prompt(intro, middle, ending)
+    
 
     try:
         response = claude_client.messages.create(
@@ -390,8 +390,15 @@ def score_call(f, meta, dialodue=None):
     s["Якість мовлення"] = meta["speech_score"]
     s["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
 
-    comment = meta["manager_comment"]
-    s["Оформлення картки"] = 0 if not comment else 2.5 if len(comment.split()) < 4 else 5
+    match = f.get("comment_match_level", "none")
+    complete = f.get("comment_complete", False)
+    
+    if match == "none":
+        s["Оформлення картки"] = 0
+    elif not complete:
+        s["Оформлення картки"] = 2.5
+    else:
+        s["Оформлення картки"] = 5
 
     lvl = f.get("continuation_level", "none")
     s["Утримання клієнта"] = 20 if lvl == "strong" else 15 if lvl == "weak" else 10
@@ -478,9 +485,9 @@ if run_openai or run_claude:
             clean_dialogue = clean_and_structure(transcript, replacements)
 
             if run_openai:
-                features = extract_features_openai(clean_dialogue)
+                features = extract_features_openai(clean_dialogue, call["manager_comment"])
             else:
-                features = extract_features_claude(clean_dialogue)
+                features = extract_features_claude(clean_dialogue, call["manager_comment"])
 
             if not features:
                 st.warning("Помилка аналізу")
