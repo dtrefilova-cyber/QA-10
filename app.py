@@ -71,7 +71,6 @@ for row in range(5):
                 "bonus_check": bonus_check,
                 "repeat_call": repeat_call,
                 "manager_comment": manager_comment,
-                "speech_score": speech_score
             })
 
 # ================= TRANSCRIPTION =================
