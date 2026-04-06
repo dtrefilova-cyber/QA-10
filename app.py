@@ -355,10 +355,17 @@ run_claude = col2.button("🧠 Claude")
 
 if run_openai or run_claude:
     st.session_state["results"].clear()
+
     google_client = None
+    replacements = {}
 
     try:
         google_client = connect_google()
+
+        # підключення словника
+        dict_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("DICT")
+        replacements = load_replacements(dict_sheet)
+
     except Exception as e:
         st.error(f"Google connect error: {e}")
 
@@ -368,13 +375,19 @@ if run_openai or run_claude:
 
         with st.spinner(f"Аналіз дзвінка {i+1}..."):
 
+            # 1. транскрипція
             transcript = transcribe_audio(call["url"])
             if not transcript:
                 st.warning("Немає транскрипції")
                 continue
 
-            clean_dialogue = clean_and_structure(transcript)
+            # 2. очистка (з урахуванням словника)
+            clean_dialogue = clean_and_structure(transcript, replacements)
+            if not clean_dialogue:
+                st.warning("Помилка очистки транскрипції")
+                continue
 
+            # 3. аналіз
             if run_openai:
                 features = extract_features_openai(clean_dialogue)
             else:
@@ -384,9 +397,11 @@ if run_openai or run_claude:
                 st.warning("Помилка аналізу")
                 continue
 
+            # 4. скоринг
             scores = score_call(features, call)
             comment = generate_qa_comment(scores, features)
 
+            # 5. запис у Google Sheets
             if google_client:
                 try:
                     log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
@@ -395,14 +410,15 @@ if run_openai or run_claude:
                         call["client_id"],
                         call["ret_manager"],
                         call["url"],
-                        transcript,
-                        clean_dialogue,
+                        transcript,         # сирий
+                        clean_dialogue,     # очищений
                         comment,
                         sum(scores.values())
                     ])
                 except Exception as e:
                     st.error(f"Google error: {e}")
 
+            # 6. збереження результату
             st.session_state["results"].append({
                 "scores": scores,
                 "comment": comment
