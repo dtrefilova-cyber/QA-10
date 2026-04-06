@@ -343,18 +343,40 @@ def score_call(f, meta):
 
 
 # ================= COMMENT =================
-def generate_qa_comment(scores, features):
-    comments = []
-    if scores["Спроба презентації"] == 0:
-        comments.append("Спроба презентації — відсутня")
-    if scores["Домовленість про наступний контакт"] < 5:
-        comments.append("Немає точного часу передзвону")
-    if scores["Пропозиція бонусу"] < 10:
-        comments.append("Недостатньо умов бонусу")
-    if scores["Утримання клієнта"] < 20:
-        comments.append("Слабке утримання клієнта")
+def generate_qa_comment(dialogue, scores):
+    try:
+        prompt = f"""
+Ти QA-аналітик.
 
-    return "\n".join([f"- {c}" for c in comments]) if comments else "Все виконано добре"
+Є діалог і оцінки дзвінка.
+Поясни КОЖЕН критерій.
+
+Для кожного:
+- бал
+- чому така оцінка
+- цитата з діалогу
+
+Оцінки:
+{json.dumps(scores, ensure_ascii=False)}
+
+Діалог:
+{dialogue}
+"""
+
+        res = client.chat.completions.create(
+            model="gpt-5.4",
+            temperature=0.2,
+            messages=[
+                {"role": "system", "content": "Ти QA-аналітик дзвінків."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        return res.choices[0].message.content.strip()
+
+    except Exception as e:
+        st.error(f"Comment error: {e}")
+        return "Помилка генерації коментаря"
 
 # ================= RUN =================
 if "results" not in st.session_state:
@@ -404,7 +426,7 @@ if run_openai or run_claude:
                 continue
 
             scores = score_call(features, call)
-            comment = generate_qa_comment(scores, features)
+            comment = generate_qa_comment(clean_dialogue, scores)
 
             if google_client:
                 try:
