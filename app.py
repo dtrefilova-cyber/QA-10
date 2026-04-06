@@ -214,13 +214,138 @@ def extract_segments(dialogue):
     return "\n".join(lines[:5]), "\n".join(lines[5:-5]), "\n".join(lines[-5:])
 
 # ================= GPT =================
-# (без змін — залиш як було)
+def apply_defaults(features):
+    defaults = {
+        "manager_name_present": False,
+        "manager_position_present": False,
+        "company_present": False,
+        "client_name_used": False,
+        "purpose_present": False,
+        "bonus_offered": False,
+        "bonus_conditions": [],
+        "followup_type": "none",
+        "objection_detected": False,
+        "client_wants_to_end": False,
+        "continuation_level": "none",
+        "has_presentation": False,
+        "has_farewell": False,
+        "presentation_score": 0
+    }
+
+    for k, v in defaults.items():
+        features.setdefault(k, v)
+
+    return features
+
+
+def extract_features_openai(dialogue):
+    intro, middle, ending = extract_segments(dialogue)
+    prompt = get_full_analysis_prompt(intro, middle, ending)
+
+    try:
+        res = client.chat.completions.create(
+            model="gpt-5.4",
+            temperature=0,
+            messages=[
+                {"role": "system", "content": "JSON only"},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        text = res.choices[0].message.content
+        match = re.search(r"\{[\s\S]*\}", text)
+        if not match:
+            return {}
+
+        return apply_defaults(json.loads(match.group()))
+
+    except Exception as e:
+        st.error(f"GPT error: {e}")
+        return {}
+
+
+def extract_features_claude(dialogue):
+    intro, middle, ending = extract_segments(dialogue)
+    prompt = get_full_analysis_prompt(intro, middle, ending)
+
+    try:
+        response = claude_client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1000,
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Return ONLY valid JSON.\n{prompt}"
+                }
+            ]
+        )
+
+        text = response.content[0].text
+        match = re.search(r"\{[\s\S]*\}", text)
+
+        if not match:
+            return {}
+
+        return apply_defaults(json.loads(match.group()))
+
+    except Exception as e:
+        st.error(f"Claude error: {e}")
+        return {}
+
 
 # ================= SCORING =================
-# (без змін)
+def score_call(f, meta):
+    s = {}
+
+    elements = sum([
+        f["manager_name_present"],
+        f["manager_position_present"],
+        f["company_present"],
+        f["client_name_used"],
+        f["purpose_present"]
+    ])
+
+    s["Встановлення контакту"] = 7.5 if elements >= 4 else 5 if elements == 3 else 2.5 if elements == 2 else 0
+    s["Спроба презентації"] = f.get("presentation_score", 0)
+
+    fup = f.get("followup_type", "none")
+    s["Домовленість про наступний контакт"] = 5 if fup == "exact_time" else 2.5 if fup == "offer" else 0
+
+    cond = len(set(f.get("bonus_conditions", [])))
+    s["Пропозиція бонусу"] = 10 if cond >= 2 else 5 if cond == 1 else 0
+
+    s["Завершення розмови"] = 5 if f.get("has_farewell") else 0
+
+    repeat = meta["repeat_call"]
+    s["Передзвон клієнту"] = 15 if repeat == "так, був протягом години" else 10 if repeat == "так, був протягом 2 годин" else 0
+
+    s["Не додумувати"] = 5
+    s["Якість мовлення"] = meta["speech_score"]
+    s["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
+
+    comment = meta["manager_comment"]
+    s["Оформлення картки"] = 0 if not comment else 2.5 if len(comment.split()) < 4 else 5
+
+    lvl = f.get("continuation_level", "none")
+    s["Утримання клієнта"] = 20 if lvl == "strong" else 15 if lvl == "weak" else 10
+
+    s["Робота із запереченнями"] = 10 if not f["objection_detected"] else (10 if lvl == "strong" else 5 if lvl == "weak" else 0)
+
+    return s
+
 
 # ================= COMMENT =================
-# (без змін)
+def generate_qa_comment(scores, features):
+    comments = []
+    if scores["Спроба презентації"] == 0:
+        comments.append("Спроба презентації — відсутня")
+    if scores["Домовленість про наступний контакт"] < 5:
+        comments.append("Немає точного часу передзвону")
+    if scores["Пропозиція бонусу"] < 10:
+        comments.append("Недостатньо умов бонусу")
+    if scores["Утримання клієнта"] < 20:
+        comments.append("Слабке утримання клієнта")
+
+    return "\n".join([f"- {c}" for c in comments]) if comments else "Все виконано добре")
 
 # ================= RUN =================
 if "results" not in st.session_state:
