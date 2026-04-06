@@ -224,16 +224,26 @@ def extract_features_claude(dialogue):
     prompt = get_full_analysis_prompt(intro, middle, ending)
 
     try:
-        res = claude_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+        import anthropic
+
+        client = anthropic.Anthropic(
+            api_key=ANTHROPIC_API_KEY,
+        )
+
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
             max_tokens=1000,
             messages=[
-                {"role": "user", "content": f"Поверни тільки JSON.\n{prompt}"}
+                {
+                    "role": "user",
+                    "content": f"Return ONLY valid JSON.\n{prompt}"
+                }
             ]
         )
 
-        text = res.content[0].text
+        text = response.content[0].text
         match = re.search(r"\{[\s\S]*\}", text)
+
         if not match:
             return {}
 
