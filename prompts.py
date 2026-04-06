@@ -1,4 +1,4 @@
-def get_full_analysis_prompt(intro: str, middle: str, ending: str) -> str:
+def get_full_analysis_prompt(intro: str, middle: str, ending: str, comment: str) -> str:
     return f"""
 Ти — строгий QA-аналітик дзвінків.
 Аналізуєш тільки те, що явно є в тексті. Нічого не вигадуєш.
@@ -184,7 +184,9 @@ has_farewell = true якщо є:
   "client_wants_to_end": false,
   "continuation_level": "none",
   "has_presentation": false,
-  "has_farewell": false
+  "has_farewell": false,
+  "comment_match_level": "none",
+  "comment_complete": false
 }}
 
 -------------------------
@@ -199,3 +201,7 @@ has_farewell = true якщо є:
 КІНЕЦЬ:
 {ending}
 """
+-------------------------
+КОМЕНТАР МЕНЕДЖЕРА
+-------------------------
+{comment}
