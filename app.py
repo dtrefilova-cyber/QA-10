@@ -165,6 +165,15 @@ def load_replacements(sheet):
     except Exception:
         return {}
 
+def apply_replacements(text, replacements):
+    if not text:
+        return text
+
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+
+    return text
+
 
 # ================= CLEAN =================
 def clean_and_structure(dialogue, replacements):
@@ -379,6 +388,10 @@ if run_openai or run_claude:
                 st.warning("Немає транскрипції")
                 continue
 
+            # жорсткі заміни
+            transcript = apply_replacements(transcript, replacements)
+
+            # GPT вже після словника
             clean_dialogue = clean_and_structure(transcript, replacements)
 
             if run_openai:
