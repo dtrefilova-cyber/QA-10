@@ -324,8 +324,18 @@ def score_call(f, meta):
 
     s["Завершення розмови"] = 5 if f.get("has_farewell") else 0
 
+    fup = f.get("followup_type", "none")
     repeat = meta["repeat_call"]
-    s["Передзвон клієнту"] = 15 if repeat == "так, був протягом години" else 10 if repeat == "так, був протягом 2 годин" else 0
+
+    # якщо НЕ було домовленості → автоматично 15
+    if fup == "none":
+        s["Передзвон клієнту"] = 15
+    else:
+        s["Передзвон клієнту"] = (
+            15 if repeat == "так, був протягом години"
+            else 10 if repeat == "так, був протягом 2 годин"
+            else 0
+        )
 
     s["Не додумувати"] = 5
     s["Якість мовлення"] = meta["speech_score"]
