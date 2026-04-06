@@ -558,7 +558,8 @@ for i, res in enumerate(st.session_state["results"]):
         st.success(f"Загальний бал: {total:.1f}")
 
         st.markdown("### 💬 Коментар QA")
-        st.write(res["comment"])
+        for line in res["comment"].split("\n"):     
+            st.write(line)
 
 # ================= EXPORT =================
 if st.session_state["results"]:
