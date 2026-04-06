@@ -167,7 +167,7 @@ def get_full_analysis_prompt(intro, middle, ending, comment):
 ФОРМАТ JSON
 ---------------------
 
-{
+{{
   "manager_name_present": boolean,
   "manager_position_present": boolean,
   "company_present": boolean,
@@ -192,7 +192,7 @@ def get_full_analysis_prompt(intro, middle, ending, comment):
   "comment_complete": boolean,
 
   "speech_quality_score": number
-}
+}}
 """
 
 
