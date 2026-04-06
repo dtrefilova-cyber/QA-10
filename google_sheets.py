@@ -71,11 +71,10 @@ def write_to_google_sheet(sheet, meta, scores):
 
         # 🔹 мета-дані (рядки 1–5)
         updates.extend([
-            (f"{col_letter}1", meta.get("client_id", "")),
-            (f"{col_letter}2", meta.get("qa_manager", "")),
-            (f"{col_letter}3", meta.get("ret_manager", "")),
-            (f"{col_letter}4", meta.get("call_date", "")),
-            (f"{col_letter}5", meta.get("check_date", ""))
+            (f"{col_letter}1", meta.get("call_date", "")),     # 1 — дата дзвінка
+            (f"{col_letter}2", meta.get("client_id", "")),     # 2 — айді клієнта
+            (f"{col_letter}3", meta.get("qa_manager", "")),    # 3 — QA
+            (f"{col_letter}4", meta.get("check_date", ""))     # 4 — дата перевірки
         ])
 
         # 🔹 оцінки (рядки 6+)
