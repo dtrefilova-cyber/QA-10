@@ -8,13 +8,20 @@ from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
 from prompts import get_full_analysis_prompt
+import anthropic
 
 # ================= CONFIG =================
 DEEPGRAM_API_KEY = st.secrets["DEEPGRAM_API_KEY"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+ANTHROPIC_API_KEY = st.secrets["ANTHROPIC_API_KEY"]
+
 LOG_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 
 client = OpenAI(api_key=OPENAI_API_KEY)
+
+claude_client = anthropic.Anthropic(
+    api_key=ANTHROPIC_API_KEY
+)
 
 # ================= HEADER =================
 st.markdown("""
@@ -105,7 +112,6 @@ def transcribe_audio(url):
 
         all_words = []
 
-        # збираємо всі слова
         for i, ch in enumerate(channels):
             alt = ch.get("alternatives", [])
             if not alt:
@@ -124,7 +130,6 @@ def transcribe_audio(url):
         if not all_words:
             return None
 
-        # сортуємо по часу
         all_words.sort(key=lambda x: x["start"])
 
         dialogue = []
@@ -134,12 +139,8 @@ def transcribe_audio(url):
 
         for w in all_words:
             speaker = w["speaker"]
-
             pause = w["start"] - last_end
 
-            # нова репліка тільки якщо:
-            # 1. змінився спікер
-            # 2. або дуже довга пауза (>1.5 сек)
             if speaker != current_speaker or pause > 1.5:
                 if current_phrase:
                     dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
@@ -164,31 +165,8 @@ def extract_segments(dialogue):
     lines = dialogue.split("\n")
     return "\n".join(lines[:5]), "\n".join(lines[5:-5]), "\n".join(lines[-5:])
 
-
 # ================= GPT =================
-def extract_features(dialogue):
-    intro, middle, ending = extract_segments(dialogue)
-    prompt = get_full_analysis_prompt(intro, middle, ending)
-
-    try:
-        res = client.chat.completions.create(
-            model="gpt-5.4",
-            temperature=0,
-            messages=[
-                {"role": "system", "content": "JSON only"},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        text = res.choices[0].message.content
-        match = re.search(r"\{[\s\S]*\}", text)
-        if not match:
-            return {}
-
-        features = json.loads(match.group())
-    except Exception as e:
-        st.error(f"GPT error: {e}")
-        return {}
-
+def apply_defaults(features):
     defaults = {
         "manager_name_present": False,
         "manager_position_present": False,
@@ -211,6 +189,55 @@ def extract_features(dialogue):
 
     return features
 
+
+def extract_features_openai(dialogue):
+    intro, middle, ending = extract_segments(dialogue)
+    prompt = get_full_analysis_prompt(intro, middle, ending)
+
+    try:
+        res = client.chat.completions.create(
+            model="gpt-5.4",
+            temperature=0,
+            messages=[
+                {"role": "system", "content": "JSON only"},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        text = res.choices[0].message.content
+        match = re.search(r"\{[\s\S]*\}", text)
+        if not match:
+            return {}
+
+        return apply_defaults(json.loads(match.group()))
+
+    except Exception as e:
+        st.error(f"GPT error: {e}")
+        return {}
+
+
+def extract_features_claude(dialogue):
+    intro, middle, ending = extract_segments(dialogue)
+    prompt = get_full_analysis_prompt(intro, middle, ending)
+
+    try:
+        res = claude_client.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=1000,
+            messages=[
+                {"role": "user", "content": f"Поверни тільки JSON.\n{prompt}"}
+            ]
+        )
+
+        text = res.content[0].text
+        match = re.search(r"\{[\s\S]*\}", text)
+        if not match:
+            return {}
+
+        return apply_defaults(json.loads(match.group()))
+
+    except Exception as e:
+        st.error(f"Claude error: {e}")
+        return {}
 
 # ================= SCORING =================
 def score_call(f, meta):
@@ -252,7 +279,6 @@ def score_call(f, meta):
 
     return s
 
-
 # ================= COMMENT =================
 def generate_qa_comment(scores, features):
     comments = []
@@ -267,12 +293,15 @@ def generate_qa_comment(scores, features):
 
     return "\n".join([f"- {c}" for c in comments]) if comments else "Все виконано добре"
 
-
 # ================= RUN =================
 if "results" not in st.session_state:
     st.session_state["results"] = []
 
-if st.button("🚀 Запустити аналіз", type="primary"):
+col1, col2 = st.columns(2)
+run_openai = col1.button("🚀 OpenAI", type="primary")
+run_claude = col2.button("🧠 Claude")
+
+if run_openai or run_claude:
     st.session_state["results"].clear()
     google_client = None
     try:
@@ -285,32 +314,29 @@ if st.button("🚀 Запустити аналіз", type="primary"):
             continue
 
         with st.spinner(f"Аналіз дзвінка {i+1}..."):
-            # ================= TRANSCRIPTION =================
             transcript = transcribe_audio(call["url"])
             if not transcript:
                 st.warning("Немає транскрипції")
                 continue
 
-            # ================= GPT =================
-            features = extract_features(transcript)
+            if run_openai:
+                features = extract_features_openai(transcript)
+            else:
+                features = extract_features_claude(transcript)
+
             if not features:
-                st.warning("Помилка аналізу GPT")
+                st.warning("Помилка аналізу")
                 continue
 
-            # ================= SCORING =================
             scores = score_call(features, call)
-
-            # ================= COMMENT =================
             comment = generate_qa_comment(scores, features)
 
-            # ================= GOOGLE =================
             if google_client:
                 try:
                     sheet = google_client.open(call["ret_manager"]).sheet1
                     write_to_google_sheet(sheet, call, scores)
                     sheet.append_row([call["client_id"], comment])
 
-                    # лог
                     log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
                     log_sheet.append_row([
                         call["check_date"],
@@ -324,12 +350,10 @@ if st.button("🚀 Запустити аналіз", type="primary"):
                 except Exception as e:
                     st.error(f"Google error: {e}")
 
-            # ================= SAVE =================
             st.session_state["results"].append({
                 "scores": scores,
                 "comment": comment
             })
-
 
 # ================= OUTPUT =================
 for i, res in enumerate(st.session_state["results"]):
@@ -346,7 +370,6 @@ for i, res in enumerate(st.session_state["results"]):
 
         st.markdown("### 💬 Коментар QA")
         st.write(res["comment"])
-
 
 # ================= EXPORT =================
 if st.session_state["results"]:
