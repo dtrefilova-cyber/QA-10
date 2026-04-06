@@ -334,7 +334,7 @@ def extract_features_claude(dialogue, comment):
 
 
 # ================= SCORING =================
-def score_call(f, meta, dialodue=None):
+def score_call(f, meta, dialogue=None):
     s = {}
     # якщо автовідповідач → всі 0
     if dialogue and is_autoresponder(dialogue):
