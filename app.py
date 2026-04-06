@@ -59,7 +59,6 @@ for row in range(5):
                 key=f"repeat_{idx}"
             )
             manager_comment = st.text_area("Коментар", key=f"comment_{idx}")
-            "speech_score": speech_score
 
             calls.append({
                 "url": audio_url.strip(),
@@ -388,10 +387,10 @@ def score_call(f, meta, dialogue=None):
 
     s["Не додумувати"] = 5
     value = f.get("speech_quality_score", 0)  
-        try:     
-            s["Якість мовлення"] = float(value) 
-        except:     
-            s["Якість мовлення"] = 0
+    try:     
+        s["Якість мовлення"] = float(value) 
+    except:     
+        s["Якість мовлення"] = 0
             
     s["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
 
