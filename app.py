@@ -222,6 +222,25 @@ def extract_segments(dialogue):
     lines = dialogue.split("\n")
     return "\n".join(lines[:5]), "\n".join(lines[5:-5]), "\n".join(lines[-5:])
 
+def is_autoresponder(dialogue: str) -> bool:
+    if not dialogue:
+        return False
+
+    text = dialogue.lower()
+
+    triggers = [
+        "залиште повідомлення",
+        "після сигналу",
+        "абонент недоступний",
+        "не може відповісти",
+        "voice mail",
+        "voicemail",
+        "please leave a message",
+        "номер не обслуговується"
+    ]
+
+    return any(t in text for t in triggers)
+
 # ================= GPT =================
 def apply_defaults(features):
     defaults = {
@@ -302,8 +321,24 @@ def extract_features_claude(dialogue):
 
 
 # ================= SCORING =================
-def score_call(f, meta):
+def score_call(f, meta, dialodue=None):
     s = {}
+    # якщо автовідповідач → всі 0
+    if dialogue and is_autoresponder(dialogue):
+    return {
+        "Встановлення контакту": 0,
+        "Спроба презентації": 0,
+        "Домовленість про наступний контакт": 0,
+        "Пропозиція бонусу": 0,
+        "Завершення розмови": 0,
+        "Передзвон клієнту": 0,
+        "Не додумувати": 0,
+        "Якість мовлення": 0,
+        "Професіоналізм": 0,
+        "Оформлення картки": 0,
+        "Утримання клієнта": 0,
+        "Робота із запереченнями": 0
+    }
 
     elements = sum([
         f["manager_name_present"],
@@ -324,6 +359,7 @@ def score_call(f, meta):
 
     s["Завершення розмови"] = 5 if f.get("has_farewell") else 0
 
+    # ПРАВКА ПО ДОМОВЛЕННОСТІ! 
     fup = f.get("followup_type", "none")
     repeat = meta["repeat_call"]
 
