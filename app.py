@@ -14,18 +14,14 @@ import anthropic
 DEEPGRAM_API_KEY = st.secrets["DEEPGRAM_API_KEY"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 ANTHROPIC_API_KEY = st.secrets.get("ANTHROPIC_API_KEY")
-if ANTHROPIC_API_KEY:
-    import anthropic
-    claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-
-LOG_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 claude_client = anthropic.Anthropic(
     api_key=ANTHROPIC_API_KEY
 )
+
+LOG_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 
 # ================= HEADER =================
 st.markdown("""
@@ -79,17 +75,6 @@ for row in range(5):
             })
 
 # ================= TRANSCRIPTION =================
-def clean_transcript(text):
-    replacements = {
-        "вагас": "Vegas",
-        "вегас": "Vegas",
-        "відпрограма": "віп програма"
-    }
-    for k, v in replacements.items():
-        text = text.replace(k, v)
-    return text
-
-
 def transcribe_audio(url):
     if not url:
         return None
@@ -103,14 +88,9 @@ def transcribe_audio(url):
                 "smart_format": "true",
                 "punctuate": "true",
                 "utterances": "true",
-
-                # ключове
                 "multichannel": "true",
                 "diarize": "true",
-
-                # мова 
-                "language": "uk",
-
+                "language": "uk"
             },
             json={"url": url}
         )
@@ -129,7 +109,6 @@ def transcribe_audio(url):
             if not alternatives:
                 continue
 
-            # беремо першу альтернативу (найчастіше найкраща)
             words = alternatives[0].get("words", [])
 
             for w in words:
@@ -137,18 +116,14 @@ def transcribe_audio(url):
                     "word": w.get("word", ""),
                     "start": w.get("start", 0),
                     "end": w.get("end", 0),
-
-                    # не прив'язуємо жорстко до ролей
                     "speaker": f"ch_{ch_index}"
                 })
 
         if not all_words:
             return None
 
-        # сортування по часу
         all_words.sort(key=lambda x: x["start"])
 
-        # формуємо діалог
         dialogue = []
         current_speaker = all_words[0]["speaker"]
         current_phrase = []
@@ -158,7 +133,6 @@ def transcribe_audio(url):
             speaker = w["speaker"]
             pause = w["start"] - last_end
 
-            # зміна спікера або коротка пауза
             if speaker != current_speaker or pause > 0.5:
                 if current_phrase:
                     dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
@@ -177,6 +151,40 @@ def transcribe_audio(url):
     except Exception as e:
         st.error(f"Transcription exception: {str(e)}")
         return None
+
+
+# ================= CLEAN =================
+def clean_and_structure(dialogue):
+    if not dialogue:
+        return None
+
+    prompt = f"""
+НЕ переписуй текст.
+Виправ тільки помилки слів.
+НЕ змінюй мову.
+
+Замінити:
+ch_0 → Менеджер
+ch_1 → Клієнт
+
+Поверни тільки діалог.
+"""
+
+    try:
+        res = client.chat.completions.create(
+            model="gpt-5.4",
+            temperature=0,
+            messages=[
+                {"role": "system", "content": "Виправляєш транскрипцію без зміни змісту."},
+                {"role": "user", "content": prompt + "\n\n" + dialogue}
+            ]
+        )
+
+        return res.choices[0].message.content.strip()
+
+    except Exception as e:
+        st.error(f"Cleaning error: {e}")
+        return dialogue
 
 
 def extract_segments(dialogue):
@@ -238,20 +246,11 @@ def extract_features_claude(dialogue):
     prompt = get_full_analysis_prompt(intro, middle, ending)
 
     try:
-        import anthropic
-
-        client = anthropic.Anthropic(
-            api_key=ANTHROPIC_API_KEY,
-        )
-
-        response = client.messages.create(
+        response = claude_client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=1000,
             messages=[
-                {
-                    "role": "user",
-                    "content": f"Return ONLY valid JSON.\n{prompt}"
-                }
+                {"role": "user", "content": f"Return ONLY valid JSON.\n{prompt}"}
             ]
         )
 
@@ -344,19 +343,13 @@ if run_openai or run_claude:
 
         with st.spinner(f"Аналіз дзвінка {i+1}..."):
 
-            # 1. Транскрипція
             transcript = transcribe_audio(call["url"])
             if not transcript:
                 st.warning("Немає транскрипції")
                 continue
 
-            # 2. Очистка (НОВИЙ КРОК)
             clean_dialogue = clean_and_structure(transcript)
-            if not clean_dialogue:
-                st.warning("Помилка очистки транскрипції")
-                continue
 
-            # 3. Аналіз
             if run_openai:
                 features = extract_features_openai(clean_dialogue)
             else:
@@ -366,31 +359,25 @@ if run_openai or run_claude:
                 st.warning("Помилка аналізу")
                 continue
 
-            # 4. Скоринг
             scores = score_call(features, call)
             comment = generate_qa_comment(scores, features)
 
-            # 5. Запис в Google Sheets
             if google_client:
                 try:
-                    sheet = google_client.open(call["ret_manager"]).sheet1
-                    write_to_google_sheet(sheet, call, scores)
-                    sheet.append_row([call["client_id"], comment])
-
                     log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
                     log_sheet.append_row([
                         call["check_date"],
                         call["client_id"],
                         call["ret_manager"],
                         call["url"],
-                        clean_dialogue,  # пишемо вже очищений текст
+                        transcript,
+                        clean_dialogue,
                         comment,
                         sum(scores.values())
                     ])
                 except Exception as e:
                     st.error(f"Google error: {e}")
 
-            # 6. Збереження результату
             st.session_state["results"].append({
                 "scores": scores,
                 "comment": comment
