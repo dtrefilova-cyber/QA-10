@@ -361,7 +361,17 @@ def score_call(f, meta, dialogue=None):
     ])
 
     s["Встановлення контакту"] = 7.5 if elements >= 4 else 5 if elements == 3 else 2.5 if elements == 2 else 0
-    s["Спроба презентації"] = f.get("presentation_score", 0)
+    if not f.get("has_presentation"):
+        s["Спроба презентації"] = 0
+    else:
+        score = f.get("presentation_score", 0)
+    
+        if score >= 4:
+            s["Спроба презентації"] = 5
+        elif score >= 2:
+            s["Спроба презентації"] = 2.5
+        else:
+            s["Спроба презентації"] = 0
 
     fup = f.get("followup_type", "none")
     s["Домовленість про наступний контакт"] = 5 if fup == "exact_time" else 2.5 if fup == "offer" else 0
@@ -386,10 +396,16 @@ def score_call(f, meta, dialogue=None):
         )
 
     s["Не додумувати"] = 5
-    value = f.get("speech_quality_score", 0)  
-    try:     
-        s["Якість мовлення"] = float(value) 
-    except:     
+    value = f.get("speech_quality_score", 0)
+
+    try:
+        value = float(value)
+    except:
+        value = 0
+    
+    if value >= 2:
+        s["Якість мовлення"] = 2.5
+    else:
         s["Якість мовлення"] = 0
             
     s["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
