@@ -1,185 +1,387 @@
-def get_full_analysis_prompt(intro: str, middle: str, ending: str) -> str:
-    return f"""
-Ти — строгий QA-аналітик дзвінків.
-Аналізуєш тільки те, що явно є в тексті. Нічого не вигадуєш.
+import streamlit as st
+import pandas as pd
+import requests
+import json
+import re
+from google_sheets import connect_google, write_to_google_sheet
+from io import BytesIO
+from datetime import datetime
+from openai import OpenAI
+from prompts import get_full_analysis_prompt
+import anthropic
 
--------------------------
-ОСОБЛИВІ СИТУАЦІЇ
--------------------------
-Якщо клієнт:
-- за кермом
-- в укритті / тривога
-- агресивний / матюкається
-- різко завершує розмову
+# ================= CONFIG =================
+DEEPGRAM_API_KEY = st.secrets["DEEPGRAM_API_KEY"]
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+ANTHROPIC_API_KEY = st.secrets["ANTHROPIC_API_KEY"]
 
-ТОДІ:
-- не занижуй оцінку за відсутність презентації
-- якщо була спроба домовитись → followup_type = "exact_time"
-- не вважай відсутність утримання помилкою
-- заперечення можна не опрацьовувати
+LOG_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 
-Якщо менеджер зробив 2+ спроби домовитись, але клієнт не дав точний час:
-→ followup_type = "exact_time"
+client = OpenAI(api_key=OPENAI_API_KEY)
 
--------------------------
-1. ВСТАНОВЛЕННЯ КОНТАКТУ
--------------------------
-Визнач:
-- manager_name_present
-- manager_position_present
-- company_present
-- client_name_used
-- purpose_present
+claude_client = anthropic.Anthropic(
+    api_key=ANTHROPIC_API_KEY
+)
 
--------------------------
-2. ПРЕЗЕНТАЦІЯ
--------------------------
-has_presentation = true ТІЛЬКИ якщо:
-- є назва активності / гри / програми
+# ================= HEADER =================
+st.markdown("""
+<div class="card">
+    <h2 style="margin:0;">🎧 QA-10</h2>
+    <span style="color:#aaa;">Аналіз дзвінків</span>
+</div>
+""", unsafe_allow_html=True)
 
-has_presentation = false якщо:
-- тільки бонус
-- загальні фрази ("подивіться", "є щось")
+check_date = st.date_input("Дата перевірки", datetime.today())
 
-2,5 — є згадка без пояснення
-5 — є пояснення (що це і що зробити)
+qa_managers_list = [
+    "Дар'я", "Надя", "Настя", "Владимира", "Діана", "Руслана", "Олексій"
+]
 
--------------------------
-3. НАСТУПНИЙ КОНТАКТ
--------------------------
-followup_type:
+# ================= INPUT =================
+calls = []
+for row in range(5):
+    col1, col2 = st.columns(2)
+    for col, idx in zip([col1, col2], [row * 2 + 1, row * 2 + 2]):
+        with col.expander(f"📞 Дзвінок {idx}"):
+            audio_url = st.text_input("Посилання", key=f"url_{idx}")
+            qa_manager = st.selectbox("QA", qa_managers_list, key=f"qa_{idx}")
+            ret_manager = st.text_input("Менеджер", key=f"ret_{idx}")
+            client_id = st.text_input("ID", key=f"client_{idx}")
+            call_date = st.text_input("Дата", key=f"date_{idx}")
+            bonus_check = st.selectbox(
+                "Бонус",
+                ["правильно нараховано", "помилково нараховано", "не потрібно"],
+                key=f"bonus_{idx}"
+            )
+            repeat_call = st.selectbox(
+                "Передзвон",
+                ["так, був протягом години", "так, був протягом 2 годин", "ні, не було"],
+                key=f"repeat_{idx}"
+            )
+            manager_comment = st.text_area("Коментар", key=f"comment_{idx}")
+            speech_score = st.selectbox("Мовлення", [2.5, 0], key=f"speech_{idx}")
 
-"exact_time":
-- "після 16"
-- "о 17"
-- "з 5 до 6"
+            calls.append({
+                "url": audio_url.strip(),
+                "qa_manager": qa_manager,
+                "ret_manager": ret_manager,
+                "client_id": client_id,
+                "call_date": call_date,
+                "check_date": check_date.strftime("%d-%m-%Y"),
+                "bonus_check": bonus_check,
+                "repeat_call": repeat_call,
+                "manager_comment": manager_comment,
+                "speech_score": speech_score
+            })
 
-"offer":
-- "ввечері"
-- "потім"
+# ================= TRANSCRIPTION =================
+def clean_transcript(text):
+    replacements = {
+        "вагас": "Vegas",
+        "вегас": "Vegas",
+        "відпрограма": "віп програма"
+    }
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+    return text
 
-"none":
-- якщо не було
 
--------------------------
-4. ПРОПОЗИЦІЯ БОНУСУ
--------------------------
-bonus_offered = true, якщо менеджер озвучив бонус
+def transcribe_audio(url):
+    if not url:
+        return None
 
-bonus_conditions = список усіх окремих умов або характеристик бонусу
+    try:
+        r = requests.post(
+            "https://api.deepgram.com/v1/listen",
+            headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"},
+            params={
+                "model": "nova-3",
+                "smart_format": "true",
+                "detect_language": "true",
+                "multichannel": "true"
+            },
+            json={"url": url}
+        )
 
-ВВАЖАЮТЬСЯ РІЗНИМИ УМОВАМИ:
-- відіграш / без відіграшу
-- депозит / без депозиту
-- термін дії (наприклад: 48 годин)
-- обмеження
-- кількість варіантів
-- механіка (оберти → гроші, можна вивести)
+        if r.status_code != 200:
+            st.error(f"Deepgram error: {r.text}")
+            return None
 
-ВАЖЛИВО:
-Якщо менеджер описує бонус різними фразами — рахуй кожну характеристику окремо
+        data = r.json()
+        channels = data.get("results", {}).get("channels", [])
 
-Наприклад:
-"без відіграшу" + "48 годин" → це вже 2 умови
+        all_words = []
 
-Якщо є 2 або більше різних умов → це >=2 умови
+        for i, ch in enumerate(channels):
+            alt = ch.get("alternatives", [])
+            if not alt:
+                continue
 
--------------------------
-5. ЗАПЕРЕЧЕННЯ
--------------------------
-objection_detected якщо клієнт каже:
-- немає грошей
-- немає часу
-- не хоче
-- немає віддачі
+            speaker = "Менеджер" if i == 0 else "Клієнт"
 
-Якщо клієнт військовий:
-→ ігноруй заперечення по коштам і часу
+            for w in alt[0].get("words", []):
+                all_words.append({
+                    "word": w.get("word", ""),
+                    "start": w.get("start", 0),
+                    "end": w.get("end", 0),
+                    "speaker": speaker
+                })
 
-continuation_level:
-- "strong" → є рішення під заперечення (мін депозит, альтернатива)
-- "weak" → загальні слова ("розумію", "ви молодець")
-- "none" → ігнор
+        if not all_words:
+            return None
 
--------------------------
-6. УТРИМАННЯ КЛІЄНТА
--------------------------
-client_wants_to_end = true ТІЛЬКИ якщо клієнт сам говорить або натякає:
-- "я не можу"
-- "мені незручно"
-- "я на роботі"
-- "давайте потім"
+        all_words.sort(key=lambda x: x["start"])
 
-Якщо ініціатор завершення менеджер → client_wants_to_end = false
+        dialogue = []
+        current_speaker = all_words[0]["speaker"]
+        current_phrase = []
+        last_end = all_words[0]["end"]
 
-continuation_level:
+        for w in all_words:
+            speaker = w["speaker"]
+            pause = w["start"] - last_end
 
-"strong":
-- менеджер намагається утримати
-- пропонує альтернативи
-- скорочує розмову ("1 хвилинка")
-- пропонує інший час
-- залишає бонус і підводить до контакту
+            if speaker != current_speaker or pause > 1.5:
+                if current_phrase:
+                    dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
 
-"weak":
-- формальна реакція без спроби втримати
+                current_phrase = []
+                current_speaker = speaker
 
-"none":
-- менеджер не намагається утримати
-- або сам веде до завершення
+            current_phrase.append(w["word"])
+            last_end = w["end"]
 
-ВАЖЛИВО:
-Якщо менеджер сам ініціює завершення
-→ це "none"
-→ client_wants_to_end = false
+        if current_phrase:
+            dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
 
--------------------------
-7. ЗАВЕРШЕННЯ
--------------------------
-has_farewell = true якщо є:
-- "гарного дня"
-- "до побачення"
-- "бережіть себе"
-- або логічне завершення:
-  ("домовились", "на зв’язку", "тоді до зв’язку")
+        return "\n".join(dialogue)
 
--------------------------
-ВАЖЛИВО
--------------------------
-- оцінюй тільки те, що явно сказано
-- не додумуй наміри менеджера
-- враховуй контекст
+    except Exception as e:
+        st.error(f"Transcription exception: {str(e)}")
+        return None
 
--------------------------
-ФОРМАТ ВІДПОВІДІ
--------------------------
-Поверни тільки валідний JSON. Без тексту.
 
-{{
-  "manager_name_present": false,
-  "manager_position_present": false,
-  "company_present": false,
-  "client_name_used": false,
-  "purpose_present": false,
-  "bonus_offered": false,
-  "bonus_conditions": [],
-  "followup_type": "none",
-  "objection_detected": false,
-  "client_wants_to_end": false,
-  "continuation_level": "none",
-  "has_presentation": false,
-  "has_farewell": false
-}}
+def extract_segments(dialogue):
+    lines = dialogue.split("\n")
+    return "\n".join(lines[:5]), "\n".join(lines[5:-5]), "\n".join(lines[-5:])
 
--------------------------
-ДЗВІНОК ДЛЯ АНАЛІЗУ
--------------------------
-ПОЧАТОК:
-{intro}
+# ================= GPT =================
+def apply_defaults(features):
+    defaults = {
+        "manager_name_present": False,
+        "manager_position_present": False,
+        "company_present": False,
+        "client_name_used": False,
+        "purpose_present": False,
+        "bonus_offered": False,
+        "bonus_conditions": [],
+        "followup_type": "none",
+        "objection_detected": False,
+        "client_wants_to_end": False,
+        "continuation_level": "none",
+        "has_presentation": False,
+        "has_farewell": False,
+        "presentation_score": 0
+    }
 
-СЕРЕДИНА:
-{middle}
+    for k, v in defaults.items():
+        features.setdefault(k, v)
 
-КІНЕЦЬ:
-{ending}
-"""
+    return features
+
+
+def extract_features_openai(dialogue):
+    intro, middle, ending = extract_segments(dialogue)
+    prompt = get_full_analysis_prompt(intro, middle, ending)
+
+    try:
+        res = client.chat.completions.create(
+            model="gpt-5.4",
+            temperature=0,
+            messages=[
+                {"role": "system", "content": "JSON only"},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        text = res.choices[0].message.content
+        match = re.search(r"\{[\s\S]*\}", text)
+        if not match:
+            return {}
+
+        return apply_defaults(json.loads(match.group()))
+
+    except Exception as e:
+        st.error(f"GPT error: {e}")
+        return {}
+
+
+def extract_features_claude(dialogue):
+    intro, middle, ending = extract_segments(dialogue)
+    prompt = get_full_analysis_prompt(intro, middle, ending)
+
+    try:
+        res = claude_client.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=1000,
+            messages=[
+                {"role": "user", "content": f"Поверни тільки JSON.\n{prompt}"}
+            ]
+        )
+
+        text = res.content[0].text
+        match = re.search(r"\{[\s\S]*\}", text)
+        if not match:
+            return {}
+
+        return apply_defaults(json.loads(match.group()))
+
+    except Exception as e:
+        st.error(f"Claude error: {e}")
+        return {}
+
+# ================= SCORING =================
+def score_call(f, meta):
+    s = {}
+
+    elements = sum([
+        f["manager_name_present"],
+        f["manager_position_present"],
+        f["company_present"],
+        f["client_name_used"],
+        f["purpose_present"]
+    ])
+
+    s["Встановлення контакту"] = 7.5 if elements >= 4 else 5 if elements == 3 else 2.5 if elements == 2 else 0
+    s["Спроба презентації"] = f.get("presentation_score", 0)
+
+    fup = f.get("followup_type", "none")
+    s["Домовленість про наступний контакт"] = 5 if fup == "exact_time" else 2.5 if fup == "offer" else 0
+
+    cond = len(set(f.get("bonus_conditions", [])))
+    s["Пропозиція бонусу"] = 10 if cond >= 2 else 5 if cond == 1 else 0
+
+    s["Завершення розмови"] = 5 if f.get("has_farewell") else 0
+
+    repeat = meta["repeat_call"]
+    s["Передзвон клієнту"] = 15 if repeat == "так, був протягом години" else 10 if repeat == "так, був протягом 2 годин" else 0
+
+    s["Не додумувати"] = 5
+    s["Якість мовлення"] = meta["speech_score"]
+    s["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
+
+    comment = meta["manager_comment"]
+    s["Оформлення картки"] = 0 if not comment else 2.5 if len(comment.split()) < 4 else 5
+
+    lvl = f.get("continuation_level", "none")
+    s["Утримання клієнта"] = 20 if lvl == "strong" else 15 if lvl == "weak" else 10
+
+    s["Робота із запереченнями"] = 10 if not f["objection_detected"] else (10 if lvl == "strong" else 5 if lvl == "weak" else 0)
+
+    return s
+
+# ================= COMMENT =================
+def generate_qa_comment(scores, features):
+    comments = []
+    if scores["Спроба презентації"] == 0:
+        comments.append("Спроба презентації — відсутня")
+    if scores["Домовленість про наступний контакт"] < 5:
+        comments.append("Немає точного часу передзвону")
+    if scores["Пропозиція бонусу"] < 10:
+        comments.append("Недостатньо умов бонусу")
+    if scores["Утримання клієнта"] < 20:
+        comments.append("Слабке утримання клієнта")
+
+    return "\n".join([f"- {c}" for c in comments]) if comments else "Все виконано добре"
+
+# ================= RUN =================
+if "results" not in st.session_state:
+    st.session_state["results"] = []
+
+col1, col2 = st.columns(2)
+run_openai = col1.button("🚀 OpenAI", type="primary")
+run_claude = col2.button("🧠 Claude")
+
+if run_openai or run_claude:
+    st.session_state["results"].clear()
+    google_client = None
+    try:
+        google_client = connect_google()
+    except Exception as e:
+        st.error(f"Google connect error: {e}")
+
+    for i, call in enumerate(calls):
+        if not call["url"]:
+            continue
+
+        with st.spinner(f"Аналіз дзвінка {i+1}..."):
+            transcript = transcribe_audio(call["url"])
+            if not transcript:
+                st.warning("Немає транскрипції")
+                continue
+
+            if run_openai:
+                features = extract_features_openai(transcript)
+            else:
+                features = extract_features_claude(transcript)
+
+            if not features:
+                st.warning("Помилка аналізу")
+                continue
+
+            scores = score_call(features, call)
+            comment = generate_qa_comment(scores, features)
+
+            if google_client:
+                try:
+                    sheet = google_client.open(call["ret_manager"]).sheet1
+                    write_to_google_sheet(sheet, call, scores)
+                    sheet.append_row([call["client_id"], comment])
+
+                    log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
+                    log_sheet.append_row([
+                        call["check_date"],
+                        call["client_id"],
+                        call["ret_manager"],
+                        call["url"],
+                        transcript,
+                        comment,
+                        sum(scores.values())
+                    ])
+                except Exception as e:
+                    st.error(f"Google error: {e}")
+
+            st.session_state["results"].append({
+                "scores": scores,
+                "comment": comment
+            })
+
+# ================= OUTPUT =================
+for i, res in enumerate(st.session_state["results"]):
+    with st.expander(f"📞 Дзвінок {i+1}", expanded=(i == 0)):
+        df = pd.DataFrame(
+            list(res["scores"].items()),
+            columns=["Критерій", "Оцінка"]
+        )
+        df["Оцінка"] = df["Оцінка"].apply(lambda x: f"{float(x):.1f}")
+        st.table(df)
+
+        total = sum(res["scores"].values())
+        st.success(f"Загальний бал: {total:.1f}")
+
+        st.markdown("### 💬 Коментар QA")
+        st.write(res["comment"])
+
+# ================= EXPORT =================
+if st.session_state["results"]:
+    xls = BytesIO()
+    with pd.ExcelWriter(xls, engine="openpyxl") as writer:
+        for i, res in enumerate(st.session_state["results"]):
+            df = pd.DataFrame(res["scores"].items(), columns=["Критерій", "Оцінка"])
+            df.to_excel(writer, sheet_name=f"Call_{i+1}", index=False)
+    xls.seek(0)
+
+    st.download_button(
+        label="📥 Завантажити Excel",
+        data=xls,
+        file_name="qa_results.xlsx"
+    )
