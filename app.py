@@ -108,11 +108,9 @@ def transcribe_audio(url):
                 "multichannel": "true",
                 "diarize": "true",
 
-                # мова (стабільніше ніж detect)
+                # мова 
                 "language": "uk",
 
-                # альтернативи для складних кейсів
-                "alternatives": 2
             },
             json={"url": url}
         )
