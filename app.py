@@ -84,10 +84,13 @@ def transcribe_audio(url):
             "https://api.deepgram.com/v1/listen",
             headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"},
             params={
-                "model": "general",
+                "model": "nova-3",
                 "smart_format": "true",
                 "punctuate": "true",
-                "detect_language": "true"
+                "utterances": "true",
+                "multichannel": "true",
+                "diarize": "true",
+                "language": "uk"
             },
             json={"url": url}
         )
@@ -102,33 +105,132 @@ def transcribe_audio(url):
         channels = results.get("channels", [])
         utterances = results.get("utterances", [])
 
-        if utterances:
+        all_words = []
+
+        # fallback якщо нема channels, але є utterances
+        if not channels and utterances:
             dialogue = []
             for u in utterances:
                 speaker = f"ch_{u.get('speaker', 0)}"
                 text = u.get("transcript", "")
                 if text:
                     dialogue.append(f"{speaker}: {text}")
-            if dialogue:
-                return "\n".join(dialogue)
+            return "\n".join(dialogue)
 
-        if channels:
-            texts = []
-            for ch in channels:
-                alt = ch.get("alternatives", [{}])[0]
-                t = alt.get("transcript", "")
-                if t:
-                    texts.append(t)
-            if texts:
-                return "\n".join(texts)
+        for ch_index, ch in enumerate(channels):
+            alternatives = ch.get("alternatives", [])
+            if not alternatives:
+                continue
 
-        return None
+            words = alternatives[0].get("words", [])
+
+            for w in words:
+                all_words.append({
+                    "word": w.get("word", ""),
+                    "start": w.get("start", 0),
+                    "end": w.get("end", 0),
+                    "speaker": f"ch_{ch_index}"
+                })
+
+        if not all_words:
+            return None
+
+        all_words.sort(key=lambda x: x["start"])
+
+        dialogue = []
+        current_speaker = all_words[0]["speaker"]
+        current_phrase = []
+        last_end = all_words[0]["end"]
+
+        for w in all_words:
+            speaker = w["speaker"]
+            pause = w["start"] - last_end
+
+            if speaker != current_speaker or pause > 0.5:
+                if current_phrase:
+                    dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
+
+                current_phrase = []
+                current_speaker = speaker
+
+            current_phrase.append(w["word"])
+            last_end = w["end"]
+
+        if current_phrase:
+            dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
+
+        return "\n".join(dialogue)
 
     except Exception as e:
         st.error(f"Transcription exception: {str(e)}")
         return None
 
+
+# ================= DICT =================
+def load_replacements(sheet):
+    try:
+        data = sheet.get_all_records()
+        return {
+            row["raw"]: row["correct"]
+            for row in data
+            if row.get("raw") and row.get("correct")
+        }
+    except Exception:
+        return {}
+
+def apply_replacements(text, replacements):
+    if not text:
+        return text
+
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+
+    return text
+
+
 # ================= CLEAN =================
+def clean_and_structure(dialogue, replacements):
+    if not dialogue:
+        return None
+
+    dictionary_text = "\n".join([f"{k} → {v}" for k, v in replacements.items()])
+
+    prompt = f"""
+Ти отримуєш транскрипт дзвінка після speech-to-text.
+
+Використовуй словник замін:
+{dictionary_text}
+
+Правила:
+- виправляй помилки розпізнавання
+- можна виправляти фрази, якщо вони зламані
+- не змінюй сенс
+- не скорочуй текст
+
+Замінити:
+ch_0 → Менеджер
+ch_1 → Клієнт
+
+Поверни тільки діалог.
+"""
+
+    try:
+        res = client.chat.completions.create(
+            model="gpt-5.4",
+            temperature=0,
+            messages=[
+                {"role": "system", "content": "Виправляєш транскрипцію без зміни змісту."},
+                {"role": "user", "content": prompt + "\n\n" + dialogue}
+            ]
+        )
+
+        return res.choices[0].message.content.strip()
+
+    except Exception as e:
+        st.error(f"Cleaning error: {e}")
+        return dialogue
+
+
 def extract_segments(dialogue):
     lines = dialogue.split("\n")
     return "\n".join(lines[:5]), "\n".join(lines[5:-5]), "\n".join(lines[-5:])
@@ -137,16 +239,46 @@ def is_autoresponder(dialogue: str) -> bool:
     if not dialogue:
         return False
 
+    text = dialogue.lower()
+
     triggers = [
         "залиште повідомлення",
+        "після сигналу",
         "абонент недоступний",
+        "не може відповісти",
+        "voice mail",
         "voicemail",
-        "please leave a message"
+        "please leave a message",
+        "номер не обслуговується"
     ]
 
-    return any(t in dialogue.lower() for t in triggers)
+    return any(t in text for t in triggers)
 
 # ================= GPT =================
+def apply_defaults(features):
+    defaults = {
+        "manager_name_present": False,
+        "manager_position_present": False,
+        "company_present": False,
+        "client_name_used": False,
+        "purpose_present": False,
+        "bonus_offered": False,
+        "bonus_conditions": [],
+        "followup_type": "none",
+        "objection_detected": False,
+        "client_wants_to_end": False,
+        "continuation_level": "none",
+        "has_presentation": False,
+        "has_farewell": False,
+        "presentation_score": 0
+    }
+
+    for k, v in defaults.items():
+        features.setdefault(k, v)
+
+    return features
+
+
 def extract_features_openai(dialogue, comment):
     intro, middle, ending = extract_segments(dialogue)
     prompt = get_full_analysis_prompt(intro, middle, ending, comment)
@@ -160,28 +292,32 @@ def extract_features_openai(dialogue, comment):
                 {"role": "user", "content": prompt}
             ]
         )
-
         text = res.choices[0].message.content
         match = re.search(r"\{[\s\S]*\}", text)
-
         if not match:
             return {}
 
-        return json.loads(match.group())
+        return apply_defaults(json.loads(match.group()))
 
     except Exception as e:
         st.error(f"GPT error: {e}")
         return {}
 
+
 def extract_features_claude(dialogue, comment):
     intro, middle, ending = extract_segments(dialogue)
-    prompt = get_full_analysis_prompt(intro, middle, ending, comment)
+    
 
     try:
         response = claude_client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=1000,
-            messages=[{"role": "user", "content": prompt}]
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Return ONLY valid JSON.\n{prompt}"
+                }
+            ]
         )
 
         text = response.content[0].text
@@ -190,31 +326,39 @@ def extract_features_claude(dialogue, comment):
         if not match:
             return {}
 
-        return json.loads(match.group())
+        return apply_defaults(json.loads(match.group()))
 
     except Exception as e:
         st.error(f"Claude error: {e}")
         return {}
 
+
 # ================= SCORING =================
-def score_call(f, meta, dialogue):
-
-    if is_autoresponder(dialogue):
-        return {k:0 for k in [
-            "Встановлення контакту","Спроба презентації","Домовленість про наступний контакт",
-            "Пропозиція бонусу","Завершення розмови","Передзвон клієнту",
-            "Не додумувати","Якість мовлення","Професіоналізм",
-            "Оформлення картки","Утримання клієнта","Робота із запереченнями"
-        ]}
-
+def score_call(f, meta, dialogue=None):
     s = {}
+    # якщо автовідповідач → всі 0
+    if dialogue and is_autoresponder(dialogue):
+        return {
+            "Встановлення контакту": 0,
+            "Спроба презентації": 0,
+            "Домовленість про наступний контакт": 0,
+            "Пропозиція бонусу": 0,
+            "Завершення розмови": 0,
+            "Передзвон клієнту": 0,
+            "Не додумувати": 0,
+            "Якість мовлення": 0,
+            "Професіоналізм": 0,
+            "Оформлення картки": 0,
+            "Утримання клієнта": 0,
+            "Робота із запереченнями": 0
+        }
 
     elements = sum([
-        f.get("manager_name_present", False),
-        f.get("manager_position_present", False),
-        f.get("company_present", False),
-        f.get("client_name_used", False),
-        f.get("purpose_present", False)
+        f["manager_name_present"],
+        f["manager_position_present"],
+        f["company_present"],
+        f["client_name_used"],
+        f["purpose_present"]
     ])
 
     s["Встановлення контакту"] = 7.5 if elements >= 4 else 5 if elements == 3 else 2.5 if elements == 2 else 0
@@ -228,11 +372,19 @@ def score_call(f, meta, dialogue):
 
     s["Завершення розмови"] = 5 if f.get("has_farewell") else 0
 
+    # ПРАВКА ПО ДОМОВЛЕННОСТІ! 
+    fup = f.get("followup_type", "none")
+    repeat = meta["repeat_call"]
+
+    # якщо НЕ було домовленості → автоматично 15
     if fup == "none":
         s["Передзвон клієнту"] = 15
     else:
-        repeat = meta["repeat_call"]
-        s["Передзвон клієнту"] = 15 if repeat == "так, був протягом години" else 10 if repeat == "так, був протягом 2 годин" else 0
+        s["Передзвон клієнту"] = (
+            15 if repeat == "так, був протягом години"
+            else 10 if repeat == "так, був протягом 2 годин"
+            else 0
+        )
 
     s["Не додумувати"] = 5
     s["Якість мовлення"] = meta["speech_score"]
@@ -240,107 +392,205 @@ def score_call(f, meta, dialogue):
 
     match = f.get("comment_match_level", "none")
     complete = f.get("comment_complete", False)
-    s["Оформлення картки"] = 0 if match == "none" else 2.5 if not complete else 5
+    
+    if match == "none":
+        s["Оформлення картки"] = 0
+    elif not complete:
+        s["Оформлення картки"] = 2.5
+    else:
+        s["Оформлення картки"] = 5
 
     lvl = f.get("continuation_level", "none")
     s["Утримання клієнта"] = 20 if lvl == "strong" else 15 if lvl == "weak" else 10
 
-    s["Робота із запереченнями"] = 10 if not f.get("objection_detected") else (10 if lvl == "strong" else 5 if lvl == "weak" else 0)
+    s["Робота із запереченнями"] = 10 if not f["objection_detected"] else (10 if lvl == "strong" else 5 if lvl == "weak" else 0)
 
     return s
 
+
 # ================= COMMENT =================
 def generate_qa_comment(dialogue, scores):
+    try:
+        prompt = f"""
+Ти QA-аналітик.
 
-    max_scores = {
-        "Встановлення контакту": 7.5,
-        "Спроба презентації": 5,
-        "Домовленість про наступний контакт": 5,
-        "Пропозиція бонусу": 10,
-        "Завершення розмови": 5,
-        "Передзвон клієнту": 15,
-        "Не додумувати": 5,
-        "Якість мовлення": 2.5,
-        "Професіоналізм": 10,
-        "Оформлення картки": 5,
-        "Утримання клієнта": 20,
-        "Робота із запереченнями": 10
-    }
+Є список оцінок по критеріях.
 
-    prompt = f"""
-Пройдися по кожному критерію.
+Твоя задача:
+ПРОЙТИСЯ ПО КОЖНОМУ критерію без винятку і дати короткий коментар.
 
-якщо score == max → "виконано"
-якщо score < max → коротко поясни
+Правила:
+- НЕ пропускай жоден критерій
+- якщо критерій виконаний добре → напиши "виконано"
+- якщо є недоліки → коротко поясни причину
+- один критерій = один рядок
 
-scores: {scores}
-max: {max_scores}
+Формат:
+Кожен критерій з нового рядка.
+
+Формат:
+Назва критерію — коментар
+(кожен з нового рядка)
+
+Без цитат.
+Без зайвого тексту.
+
+Максимальні бали (ключ = критерій):
+
+{
+  "Встановлення контакту": 7.5,
+  "Спроба презентації": 5,
+  "Домовленість про наступний контакт": 5,
+  "Пропозиція бонусу": 10,
+  "Завершення розмови": 5,
+  "Передзвон клієнту": 15,
+  "Не додумувати": 5,
+  "Якість мовлення": 2.5,
+  "Професіоналізм": 10,
+  "Оформлення картки": 5,
+  "Утримання клієнта": 20,
+  "Робота із запереченнями": 10
+}
+
+Порівнюй оцінку з максимальним балом по цьому ж критерію.
+
+Оцінки:
+{json.dumps(scores, ensure_ascii=False)}
+
+Діалог:
+{dialogue}
 """
 
-    try:
         res = client.chat.completions.create(
             model="gpt-5.4",
-            temperature=0,
-            messages=[{"role": "user", "content": prompt}]
+            temperature=0.2,
+            messages=[
+                {"role": "system", "content": "Ти QA-аналітик дзвінків."},
+                {"role": "user", "content": prompt}
+            ]
         )
+
         return res.choices[0].message.content.strip()
-    except:
+
+    except Exception as e:
+        st.error(f"Comment error: {e}")
         return "Помилка генерації коментаря"
 
 # ================= RUN =================
-if st.button("🚀 Запуск"):
+if "results" not in st.session_state:
     st.session_state["results"] = []
 
-    for call in calls:
+col1, col2 = st.columns(2)
+run_openai = col1.button("🚀 OpenAI", type="primary")
+run_claude = col2.button("🧠 Claude")
 
-        transcript = transcribe_audio(call["url"])
-        if not transcript:
-            st.warning("Немає транскрипції")
+if run_openai or run_claude:
+    st.session_state["results"].clear()
+
+    google_client = None
+    replacements = {}
+
+    try:
+        google_client = connect_google()
+        dict_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("DICT")
+        replacements = load_replacements(dict_sheet)
+    except Exception as e:
+        st.error(f"Google connect error: {e}")
+
+    for i, call in enumerate(calls):
+        if not call["url"]:
             continue
 
-        features = extract_features_openai(transcript, call["manager_comment"])
-        scores = score_call(features, call, transcript)
-        comment = generate_qa_comment(transcript, scores)
+        with st.spinner(f"Аналіз дзвінка {i+1}..."):
 
-        st.session_state["results"].append({
-            "scores": scores,
-            "comment": comment
-        })
+            transcript = transcribe_audio(call["url"])
+            if not transcript:
+                st.warning("Немає транскрипції")
+                continue
+
+            # жорсткі заміни
+            transcript = apply_replacements(transcript, replacements)
+
+            # GPT вже після словника
+            clean_dialogue = clean_and_structure(transcript, replacements)
+
+            if run_openai:
+                features = extract_features_openai(clean_dialogue, call["manager_comment"])
+            else:
+                features = extract_features_claude(clean_dialogue, call["manager_comment"])
+
+            if not features:
+                st.warning("Помилка аналізу")
+                continue
+
+            scores = score_call(features, call, clean_dialogue)
+            comment = generate_qa_comment(clean_dialogue, scores)
+
+            st.session_state["results"].append({
+                "scores": scores,
+                "comment": comment
+            })
+
+            if google_client:
+                try:
+                    # 🟢 таблиця менеджера
+                    sheet = google_client.open(call["ret_manager"]).sheet1
+
+                    # 🟢 формуємо оцінку одним рядком
+                    total_score = sum(scores.values())
+
+                    # 🟢 спочатку оцінки
+                    write_to_google_sheet(sheet, call, scores)
+
+                    # 🟢 запис у таблицю менеджера (твоя структура)
+                    sheet.append_row([
+                        call["client_id"],          # 1
+                        comment,                    # 2
+                        total_score,                # 3
+                        call["call_date"],          # 4
+                        call["check_date"]          # 5
+                    ])
+
+                    # 🟢 лог таблиця
+                    log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
+                    log_sheet.append_row([
+                        call["check_date"],
+                        call["client_id"],
+                        call["ret_manager"],
+                        call["url"],
+                        transcript,
+                        clean_dialogue,
+                        comment,
+                        sum(scores.values())
+                    ])
+
+                except Exception as e:
+                    st.error(f"Google error: {e}")
 
 # ================= OUTPUT =================
-if "results" in st.session_state and st.session_state["results"]:
-    for i, res in enumerate(st.session_state["results"]):
-        with st.expander(f"📞 Дзвінок {i+1}", expanded=(i == 0)):
+for i, res in enumerate(st.session_state["results"]):
+    with st.expander(f"📞 Дзвінок {i+1}", expanded=(i == 0)):
+        df = pd.DataFrame(
+            list(res["scores"].items()),
+            columns=["Критерій", "Оцінка"]
+        )
+        df["Оцінка"] = df["Оцінка"].apply(lambda x: f"{float(x):.1f}")
+        st.table(df)
 
-            df = pd.DataFrame(
-                list(res["scores"].items()),
-                columns=["Критерій", "Оцінка"]
-            )
+        total = sum(res["scores"].values())
+        st.success(f"Загальний бал: {total:.1f}")
 
-            df["Оцінка"] = df["Оцінка"].apply(lambda x: f"{float(x):.1f}")
-            st.table(df)
-
-            total = sum(res["scores"].values())
-            st.success(f"Загальний бал: {total:.1f}")
-
-            st.markdown("### 💬 Коментар QA")
-
-            for line in res["comment"].split("\n"):
-                if line.strip():
-                    st.write(line)
+        st.markdown("### 💬 Коментар QA")
+        for line in res["comment"].split("\n"):     
+            st.write(line)
 
 # ================= EXPORT =================
-if "results" in st.session_state and st.session_state["results"]:
+if st.session_state["results"]:
     xls = BytesIO()
-
     with pd.ExcelWriter(xls, engine="openpyxl") as writer:
         for i, res in enumerate(st.session_state["results"]):
-            df = pd.DataFrame(
-                res["scores"].items(),
-                columns=["Критерій", "Оцінка"]
-            )
+            df = pd.DataFrame(res["scores"].items(), columns=["Критерій", "Оцінка"])
             df.to_excel(writer, sheet_name=f"Call_{i+1}", index=False)
-
     xls.seek(0)
 
     st.download_button(
