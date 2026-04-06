@@ -1,7 +1,7 @@
-# google_sheets.py
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
+
 
 def connect_google():
     """Підключення до Google Sheets"""
@@ -16,7 +16,7 @@ def connect_google():
     return gspread.authorize(creds)
 
 
-# Маппінг критеріїв на рядки в Google Sheets (оновлено під актуальні назви)
+# 🔹 Маппінг критеріїв (залишаємо, може знадобитись)
 CRITERIA_ROWS = {
     "Встановлення контакту": 5,
     "Спроба презентації": 6,
@@ -41,7 +41,7 @@ META_ROWS = {
 
 
 def format_score_sheet(x):
-    """Форматує оцінку для Google Sheets - повертає число"""
+    """Форматує оцінку для Google Sheets"""
     try:
         return float(x)
     except (ValueError, TypeError):
@@ -51,13 +51,13 @@ def format_score_sheet(x):
 def find_next_column(sheet):
     """Знаходить наступну вільну колонку"""
     try:
-        row = sheet.row_values(META_ROWS["client_id"])
+        row = sheet.row_values(3)  # рядок client_id
         for i, value in enumerate(row, start=1):
             if not value or value.strip() == "":
                 return i
         return len(row) + 1
     except:
-        return 1  # якщо щось пішло не так — починаємо з першої колонки
+        return 1
 
 
 def write_to_google_sheet(sheet, meta, scores):
@@ -65,32 +65,33 @@ def write_to_google_sheet(sheet, meta, scores):
 
     try:
         column = find_next_column(sheet)
+        col_letter = chr(64 + column)
 
         updates = []
 
-        # 🔹 мета-дані
+        # 🔹 мета-дані (рядки 1–5)
         updates.extend([
-            ("A", meta["client_id"]),
-            ("B", meta["qa_manager"]),
-            ("C", meta["ret_manager"]),
-            ("D", meta["call_date"]),
-            ("E", meta["check_date"])
+            (f"{col_letter}1", meta.get("client_id", "")),
+            (f"{col_letter}2", meta.get("qa_manager", "")),
+            (f"{col_letter}3", meta.get("ret_manager", "")),
+            (f"{col_letter}4", meta.get("call_date", "")),
+            (f"{col_letter}5", meta.get("check_date", ""))
         ])
 
-        # 🔹 оцінки (з 6-го рядка)
+        # 🔹 оцінки (рядки 6+)
         row = 6
         for key, value in scores.items():
-            updates.append((f"{chr(64 + column)}{row}", value))
+            updates.append((f"{col_letter}{row}", format_score_sheet(value)))
             row += 1
 
         # 🔹 запис у таблицю
         for cell, val in updates:
             sheet.update(cell, [[val]])
 
-        return True  # ✅ ВАЖЛИВО
+        return True
 
     except Exception as e:
-        return str(e)  # щоб бачити реальну помилку
+        return str(e)
    
     # Метадані
     updates.append((META_ROWS["call_date"], meta.get("call_date", "")))
