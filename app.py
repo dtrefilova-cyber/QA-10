@@ -84,7 +84,7 @@ def transcribe_audio(url):
             "https://api.deepgram.com/v1/listen",
             headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"},
             params={
-                "model": "general",
+                "model": "nova-3",
                 "smart_format": "true",
                 "punctuate": "true",
                 "utterances": "true",
