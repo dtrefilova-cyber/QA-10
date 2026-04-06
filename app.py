@@ -7,7 +7,7 @@ from google_sheets import connect_google, write_to_google_sheet
 from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
-from prompts import get_full_analysis_prompt
+from prompts import get_full_analysis_prompt, get_qa_comment_prompt
 import anthropic
 
 # ================= CONFIG =================
@@ -59,7 +59,7 @@ for row in range(5):
                 key=f"repeat_{idx}"
             )
             manager_comment = st.text_area("Коментар", key=f"comment_{idx}")
-            speech_score = st.selectbox("Мовлення", [2.5, 0], key=f"speech_{idx}")
+            "speech_score": speech_score
 
             calls.append({
                 "url": audio_url.strip(),
@@ -270,7 +270,7 @@ def apply_defaults(features):
         "continuation_level": "none",
         "has_presentation": False,
         "has_farewell": False,
-        "presentation_score": 0
+        "speech_quality_score": 0
     }
 
     for k, v in defaults.items():
@@ -388,7 +388,12 @@ def score_call(f, meta, dialogue=None):
         )
 
     s["Не додумувати"] = 5
-    s["Якість мовлення"] = meta["speech_score"]
+    value = f.get("speech_quality_score", 0)  
+        try:     
+            s["Якість мовлення"] = float(value) 
+        except:     
+            s["Якість мовлення"] = 0
+            
     s["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
 
     match = f.get("comment_match_level", "none")
@@ -412,55 +417,7 @@ def score_call(f, meta, dialogue=None):
 # ================= COMMENT =================
 def generate_qa_comment(dialogue, scores):
     try:
-        prompt = f"""
-Ти QA-аналітик.
-
-Є список оцінок по критеріях.
-
-Твоя задача:
-ПРОЙТИСЯ ПО КОЖНОМУ критерію без винятку і дати короткий коментар.
-
-Правила:
-- НЕ пропускай жоден критерій
-- якщо критерій виконаний добре → напиши "виконано"
-- якщо є недоліки → коротко поясни причину
-- один критерій = один рядок
-
-Формат:
-Кожен критерій з нового рядка.
-
-Формат:
-Назва критерію — коментар
-(кожен з нового рядка)
-
-Без цитат.
-Без зайвого тексту.
-
-Максимальні бали (ключ = критерій):
-
-{{
-  "Встановлення контакту": 7.5,
-  "Спроба презентації": 5,
-  "Домовленість про наступний контакт": 5,
-  "Пропозиція бонусу": 10,
-  "Завершення розмови": 5,
-  "Передзвон клієнту": 15,
-  "Не додумувати": 5,
-  "Якість мовлення": 2.5,
-  "Професіоналізм": 10,
-  "Оформлення картки": 5,
-  "Утримання клієнта": 20,
-  "Робота із запереченнями": 10
-}}
-
-Порівнюй оцінку з максимальним балом по цьому ж критерію.
-
-Оцінки:
-{json.dumps(scores, ensure_ascii=False)}
-
-Діалог:
-{dialogue}
-"""
+        prompt = get_qa_comment_prompt(dialogue, scores)
 
         res = client.chat.completions.create(
             model="gpt-5.4",
