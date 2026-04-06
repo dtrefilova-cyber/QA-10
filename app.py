@@ -100,7 +100,10 @@ def transcribe_audio(url):
             return None
 
         data = r.json()
-        channels = data.get("results", {}).get("channels", [])
+        results = data.get("results", {})
+
+        channels = results.get("channels", [])
+        utterances = results.get("utterances", [])
 
         all_words = []
 
