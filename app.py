@@ -441,6 +441,9 @@ if run_openai or run_claude:
                     # 🟢 формуємо оцінку одним рядком
                     total_score = sum(scores.values())
 
+                    # 🟢 спочатку оцінки
+                    write_to_google_sheet(sheet, call, scores)
+
                     # 🟢 запис у таблицю менеджера (твоя структура)
                     sheet.append_row([
                         call["client_id"],          # 1
