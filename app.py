@@ -102,6 +102,8 @@ def transcribe_audio(url):
         data = r.json()
         results = data.get("results", {})
 
+        st.error(f"DEBUG FULL RESPONSE: {json.dumps(data)[:2000]}")
+
         channels = results.get("channels", [])
         utterances = results.get("utterances", [])
 
