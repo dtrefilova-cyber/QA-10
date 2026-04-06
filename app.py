@@ -430,24 +430,33 @@ if run_openai or run_claude:
 
             if google_client:
                 try:
-                    log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
-                    log_sheet.append_row([
-                        call["check_date"],
-                        call["client_id"],
-                        call["ret_manager"],
-                        call["url"],
-                        transcript,
-                        clean_dialogue,
-                        comment,
-                        sum(scores.values())
-                    ])
-                except Exception as e:
-                    st.error(f"Google error: {e}")
+        # 🟢 таблиця менеджера
+        sheet = google_client.open(call["ret_manager"]).sheet1
 
-            st.session_state["results"].append({
-                "scores": scores,
-                "comment": comment
-            })
+        write_to_google_sheet(sheet, call, scores)
+
+        sheet.append_row([
+            call["client_id"],
+            call["call_date"],
+            call["check_date"],
+            comment
+        ])
+
+        # 🟢 лог таблиця
+        log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
+        log_sheet.append_row([
+            call["check_date"],
+            call["client_id"],
+            call["ret_manager"],
+            call["url"],
+            transcript,
+            clean_dialogue,
+            comment,
+            sum(scores.values())
+        ])
+
+    except Exception as e:
+        st.error(f"Google error: {e}")
 
 # ================= OUTPUT =================
 for i, res in enumerate(st.session_state["results"]):
