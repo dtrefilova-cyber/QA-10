@@ -13,7 +13,10 @@ import anthropic
 # ================= CONFIG =================
 DEEPGRAM_API_KEY = st.secrets["DEEPGRAM_API_KEY"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-ANTHROPIC_API_KEY = st.secrets["ANTHROPIC_API_KEY"]
+ANTHROPIC_API_KEY = st.secrets.get("ANTHROPIC_API_KEY")
+if ANTHROPIC_API_KEY:
+    import anthropic
+    claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 LOG_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 
