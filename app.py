@@ -84,7 +84,7 @@ def transcribe_audio(url):
             "https://api.deepgram.com/v1/listen",
             headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"},
             params={
-                "model": "nova-3",
+                "model": "general",
                 "smart_format": "true",
                 "punctuate": "true",
                 "utterances": "true",
@@ -101,8 +101,6 @@ def transcribe_audio(url):
 
         data = r.json()
         results = data.get("results", {})
-
-        st.error(f"DEBUG FULL RESPONSE: {json.dumps(data)[:2000]}")
 
         channels = results.get("channels", [])
         utterances = results.get("utterances", [])
