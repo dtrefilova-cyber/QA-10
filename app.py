@@ -307,6 +307,7 @@ def extract_features_openai(dialogue, comment):
 def extract_features_claude(dialogue, comment):
     intro, middle, ending = extract_segments(dialogue)
     
+    prompt = get_full_analysis_prompt(intro, middle, ending, comment)
 
     try:
         response = claude_client.messages.create(
