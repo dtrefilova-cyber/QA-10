@@ -438,13 +438,16 @@ if run_openai or run_claude:
                     # 🟢 таблиця менеджера
                     sheet = google_client.open(call["ret_manager"]).sheet1
 
-                    write_to_google_sheet(sheet, call, scores)
+                    # 🟢 формуємо оцінку одним рядком
+                    total_score = sum(scores.values())
 
+                    # 🟢 запис у таблицю менеджера (твоя структура)
                     sheet.append_row([
-                        call["client_id"],
-                        call["call_date"],
-                        call["check_date"],
-                        comment
+                        call["client_id"],          # 1
+                        comment,                    # 2
+                        total_score,                # 3
+                        call["call_date"],          # 4
+                        call["check_date"]          # 5
                     ])
 
                     # 🟢 лог таблиця
