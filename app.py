@@ -107,6 +107,16 @@ def transcribe_audio(url):
 
         all_words = []
 
+        # fallback якщо нема channels, але є utterances
+        if not channels and utterances:
+            dialogue = []
+            for u in utterances:
+                speaker = f"ch_{u.get('speaker', 0)}"
+                text = u.get("transcript", "")
+                if text:
+                    dialogue.append(f"{speaker}: {text}")
+            return "\n".join(dialogue)
+
         for ch_index, ch in enumerate(channels):
             alternatives = ch.get("alternatives", [])
             if not alternatives:
