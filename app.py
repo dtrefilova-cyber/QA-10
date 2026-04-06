@@ -18,8 +18,6 @@ if ANTHROPIC_API_KEY:
     import anthropic
     claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-st.write("Claude key exists:", bool(ANTHROPIC_API_KEY))
-st.write("Claude key length:", len(ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else 0)
 
 LOG_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 
