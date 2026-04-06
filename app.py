@@ -334,6 +334,7 @@ run_claude = col2.button("🧠 Claude")
 if run_openai or run_claude:
     st.session_state["results"].clear()
     google_client = None
+
     try:
         google_client = connect_google()
     except Exception as e:
@@ -344,23 +345,34 @@ if run_openai or run_claude:
             continue
 
         with st.spinner(f"Аналіз дзвінка {i+1}..."):
+
+            # 1. Транскрипція
             transcript = transcribe_audio(call["url"])
             if not transcript:
                 st.warning("Немає транскрипції")
                 continue
 
+            # 2. Очистка (НОВИЙ КРОК)
+            clean_dialogue = clean_and_structure(transcript)
+            if not clean_dialogue:
+                st.warning("Помилка очистки транскрипції")
+                continue
+
+            # 3. Аналіз
             if run_openai:
-                features = extract_features_openai(transcript)
+                features = extract_features_openai(clean_dialogue)
             else:
-                features = extract_features_claude(transcript)
+                features = extract_features_claude(clean_dialogue)
 
             if not features:
                 st.warning("Помилка аналізу")
                 continue
 
+            # 4. Скоринг
             scores = score_call(features, call)
             comment = generate_qa_comment(scores, features)
 
+            # 5. Запис в Google Sheets
             if google_client:
                 try:
                     sheet = google_client.open(call["ret_manager"]).sheet1
@@ -373,13 +385,14 @@ if run_openai or run_claude:
                         call["client_id"],
                         call["ret_manager"],
                         call["url"],
-                        transcript,
+                        clean_dialogue,  # пишемо вже очищений текст
                         comment,
                         sum(scores.values())
                     ])
                 except Exception as e:
                     st.error(f"Google error: {e}")
 
+            # 6. Збереження результату
             st.session_state["results"].append({
                 "scores": scores,
                 "comment": comment
