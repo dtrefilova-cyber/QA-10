@@ -493,7 +493,7 @@ if run_openai or run_claude:
                 st.warning("Помилка аналізу")
                 continue
 
-            scores = score_call(features, call)
+            scores = score_call(features, call, clean_dialogue)
             comment = generate_qa_comment(clean_dialogue, scores)
 
             st.session_state["results"].append({
