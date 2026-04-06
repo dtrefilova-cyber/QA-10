@@ -101,8 +101,18 @@ def transcribe_audio(url):
             params={
                 "model": "nova-3",
                 "smart_format": "true",
-                "detect_language": "true",
-                "multichannel": "true"
+                "punctuate": "true",
+                "utterances": "true",
+
+                # ключове
+                "multichannel": "true",
+                "diarize": "true",
+
+                # мова (стабільніше ніж detect)
+                "language": "uk",
+
+                # альтернативи для складних кейсів
+                "alternatives": 2
             },
             json={"url": url}
         )
@@ -116,26 +126,31 @@ def transcribe_audio(url):
 
         all_words = []
 
-        for i, ch in enumerate(channels):
-            alt = ch.get("alternatives", [])
-            if not alt:
+        for ch_index, ch in enumerate(channels):
+            alternatives = ch.get("alternatives", [])
+            if not alternatives:
                 continue
 
-            speaker = "Менеджер" if i == 0 else "Клієнт"
+            # беремо першу альтернативу (найчастіше найкраща)
+            words = alternatives[0].get("words", [])
 
-            for w in alt[0].get("words", []):
+            for w in words:
                 all_words.append({
                     "word": w.get("word", ""),
                     "start": w.get("start", 0),
                     "end": w.get("end", 0),
-                    "speaker": speaker
+
+                    # не прив'язуємо жорстко до ролей
+                    "speaker": f"ch_{ch_index}"
                 })
 
         if not all_words:
             return None
 
+        # сортування по часу
         all_words.sort(key=lambda x: x["start"])
 
+        # формуємо діалог
         dialogue = []
         current_speaker = all_words[0]["speaker"]
         current_phrase = []
@@ -145,7 +160,8 @@ def transcribe_audio(url):
             speaker = w["speaker"]
             pause = w["start"] - last_end
 
-            if speaker != current_speaker or pause > 1.5:
+            # зміна спікера або коротка пауза
+            if speaker != current_speaker or pause > 0.5:
                 if current_phrase:
                     dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
 
