@@ -428,6 +428,11 @@ if run_openai or run_claude:
             scores = score_call(features, call)
             comment = generate_qa_comment(clean_dialogue, scores)
 
+            st.session_state["results"].append({
+                "scores": scores,
+                "comment": comment
+            })
+
             if google_client:
                 try:
                     # 🟢 таблиця менеджера
