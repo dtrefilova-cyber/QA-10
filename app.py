@@ -345,7 +345,7 @@ def generate_qa_comment(scores, features):
     if scores["Утримання клієнта"] < 20:
         comments.append("Слабке утримання клієнта")
 
-    return "\n".join([f"- {c}" for c in comments]) if comments else "Все виконано добре")
+    return "\n".join([f"- {c}" for c in comments]) if comments else "Все виконано добре"
 
 # ================= RUN =================
 if "results" not in st.session_state:
