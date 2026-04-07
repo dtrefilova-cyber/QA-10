@@ -375,7 +375,7 @@ def score_call(f, meta, dialogue=None):
         0
     )
 
-    # ---------------- Спроба презентації (НОВА ЛОГІКА) ----------------
+    # ---------------- Спроба презентації ----------------
     level = f.get("presentation_level", "none")
 
     if level == "full":
@@ -419,7 +419,7 @@ def score_call(f, meta, dialogue=None):
     # ---------------- Не додумувати ----------------
     s["Не додумувати"] = 5
 
-    # ---------------- Якість мовлення (НОВА ЛОГІКА) ----------------
+    # ---------------- Якість мовлення ----------------
     quality = f.get("speech_quality", "bad")
 
     if quality == "good":
@@ -443,30 +443,29 @@ def score_call(f, meta, dialogue=None):
     else:
         s["Оформлення картки"] = 5
 
-# ---------------- Утримання ----------------
-lvl = f.get("continuation_level", "none")
+    # ---------------- Утримання ----------------
+    lvl = f.get("continuation_level", "none")
 
-# ---------------- Утримання ----------------
-if not f.get("client_wants_to_end"):
-    s["Утримання клієнта"] = 20
-else:
-    s["Утримання клієнта"] = (
-        15 if lvl == "strong"
-        else 10 if lvl == "weak"
-        else 0
-    )
+    if not f.get("client_wants_to_end"):
+        s["Утримання клієнта"] = 20
+    else:
+        s["Утримання клієнта"] = (
+            15 if lvl == "strong"
+            else 10 if lvl == "weak"
+            else 0
+        )
 
-# ---------------- Заперечення ----------------
-if not f.get("objection_detected"):
-    s["Робота із запереченнями"] = 10
-else:
-    s["Робота із запереченнями"] = (
-        10 if lvl == "strong"
-        else 5 if lvl == "weak"
-        else 0
-    )
+    # ---------------- Заперечення ----------------
+    if not f.get("objection_detected"):
+        s["Робота із запереченнями"] = 10
+    else:
+        s["Робота із запереченнями"] = (
+            10 if lvl == "strong"
+            else 5 if lvl == "weak"
+            else 0
+        )
 
-return s
+    return s
 
 
 # ================= COMMENT =================
