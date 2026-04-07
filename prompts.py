@@ -86,6 +86,9 @@ def get_full_analysis_prompt(intro, middle, ending, comment):
 ВАЖЛИВО:
 - “подивіться на сайті” без пояснення → "partial"
 - якщо немає пропозиції → "none"
+- бонус НЕ є презентацією
+- якщо менеджер говорить тільки про бонус (навіть з умовами і дією) → це НЕ презентація
+- у такому випадку став "presentation_level": "none"
 
 Поверни у JSON:
 "presentation_level": "none" | "partial" | "full" 
