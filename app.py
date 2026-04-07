@@ -260,15 +260,22 @@ def apply_defaults(features):
         "company_present": False,
         "client_name_used": False,
         "purpose_present": False,
+
         "bonus_offered": False,
         "bonus_conditions": [],
+
         "followup_type": "none",
+
         "objection_detected": False,
         "client_wants_to_end": False,
         "continuation_level": "none",
-        "has_presentation": False,
+
+        "has_presentation": False,  # можна прибрати, але не обов'язково
         "has_farewell": False,
-        "speech_quality_score": 0
+
+        # 🔴 НОВЕ
+        "presentation_level": "none",
+        "speech_quality": "bad"
     }
 
     for k, v in defaults.items():
@@ -335,6 +342,7 @@ def extract_features_claude(dialogue, comment):
 # ================= SCORING =================
 def score_call(f, meta, dialogue=None):
     s = {}
+
     # якщо автовідповідач → всі 0
     if dialogue and is_autoresponder(dialogue):
         return {
@@ -352,6 +360,7 @@ def score_call(f, meta, dialogue=None):
             "Робота із запереченнями": 0
         }
 
+    # ---------------- Контакт ----------------
     elements = sum([
         f["manager_name_present"],
         f["manager_position_present"],
@@ -360,32 +369,45 @@ def score_call(f, meta, dialogue=None):
         f["purpose_present"]
     ])
 
-    s["Встановлення контакту"] = 7.5 if elements >= 4 else 5 if elements == 3 else 2.5 if elements == 2 else 0
-    if not f.get("has_presentation"):
-        s["Спроба презентації"] = 0
+    s["Встановлення контакту"] = (
+        7.5 if elements >= 4 else
+        5 if elements == 3 else
+        2.5 if elements == 2 else
+        0
+    )
+
+    # ---------------- Спроба презентації (НОВА ЛОГІКА) ----------------
+    level = f.get("presentation_level", "none")
+
+    if level == "full":
+        s["Спроба презентації"] = 5
+    elif level == "partial":
+        s["Спроба презентації"] = 2.5
     else:
-        score = f.get("presentation_score", 0)
-    
-        if score >= 4:
-            s["Спроба презентації"] = 5
-        elif score >= 2:
-            s["Спроба презентації"] = 2.5
-        else:
-            s["Спроба презентації"] = 0
+        s["Спроба презентації"] = 0
 
+    # ---------------- Домовленість ----------------
     fup = f.get("followup_type", "none")
-    s["Домовленість про наступний контакт"] = 5 if fup == "exact_time" else 2.5 if fup == "offer" else 0
+    s["Домовленість про наступний контакт"] = (
+        5 if fup == "exact_time"
+        else 2.5 if fup == "offer"
+        else 0
+    )
 
+    # ---------------- Бонус ----------------
     cond = len(set(f.get("bonus_conditions", [])))
-    s["Пропозиція бонусу"] = 10 if cond >= 2 else 5 if cond == 1 else 0
+    s["Пропозиція бонусу"] = (
+        10 if cond >= 2 else
+        5 if cond == 1 else
+        0
+    )
 
+    # ---------------- Завершення ----------------
     s["Завершення розмови"] = 5 if f.get("has_farewell") else 0
 
-    # ПРАВКА ПО ДОМОВЛЕННОСТІ! 
-    fup = f.get("followup_type", "none")
+    # ---------------- Передзвон ----------------
     repeat = meta["repeat_call"]
 
-    # якщо НЕ було домовленості → автоматично 15
     if fup == "none":
         s["Передзвон клієнту"] = 15
     else:
@@ -395,24 +417,26 @@ def score_call(f, meta, dialogue=None):
             else 0
         )
 
+    # ---------------- Не додумувати ----------------
     s["Не додумувати"] = 5
-    value = f.get("speech_quality_score", 0)
 
-    try:
-        value = float(value)
-    except:
-        value = 0
-    
-    if value >= 2:
+    # ---------------- Якість мовлення (НОВА ЛОГІКА) ----------------
+    quality = f.get("speech_quality", "bad")
+
+    if quality == "good":
         s["Якість мовлення"] = 2.5
     else:
         s["Якість мовлення"] = 0
-            
-    s["Професіоналізм"] = 5 if meta["bonus_check"] == "помилково нараховано" else 10
 
+    # ---------------- Професіоналізм ----------------
+    s["Професіоналізм"] = (
+        5 if meta["bonus_check"] == "помилково нараховано" else 10
+    )
+
+    # ---------------- Картка ----------------
     match = f.get("comment_match_level", "none")
     complete = f.get("comment_complete", False)
-    
+
     if match == "none":
         s["Оформлення картки"] = 0
     elif not complete:
@@ -420,10 +444,24 @@ def score_call(f, meta, dialogue=None):
     else:
         s["Оформлення картки"] = 5
 
+    # ---------------- Утримання ----------------
     lvl = f.get("continuation_level", "none")
-    s["Утримання клієнта"] = 20 if lvl == "strong" else 15 if lvl == "weak" else 10
 
-    s["Робота із запереченнями"] = 10 if not f["objection_detected"] else (10 if lvl == "strong" else 5 if lvl == "weak" else 0)
+    s["Утримання клієнта"] = (
+        20 if lvl == "strong"
+        else 15 if lvl == "weak"
+        else 10
+    )
+
+    # ---------------- Заперечення ----------------
+    s["Робота із запереченнями"] = (
+        10 if not f["objection_detected"]
+        else (
+            10 if lvl == "strong"
+            else 5 if lvl == "weak"
+            else 0
+        )
+    )
 
     return s
 
