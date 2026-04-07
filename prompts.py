@@ -248,7 +248,6 @@ def get_full_analysis_prompt(intro, middle, ending, comment):
   "client_name_used": boolean,
   "purpose_present": boolean,
 
-  "has_presentation": boolean,
   "presentation_level": "none" | "partial" | "full",
 
   "followup_type": "none" | "offer" | "exact_time",
