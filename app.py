@@ -270,7 +270,6 @@ def apply_defaults(features):
         "client_wants_to_end": False,
         "continuation_level": "none",
 
-        "has_presentation": False,  # можна прибрати, але не обов'язково
         "has_farewell": False,
 
         # 🔴 НОВЕ
