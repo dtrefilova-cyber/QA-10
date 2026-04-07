@@ -65,7 +65,14 @@ def write_to_google_sheet(sheet, meta, scores):
 
     try:
         column = find_next_column(sheet)
-        col_letter = chr(64 + column)
+        def get_column_letter(n):
+            string = ""
+            while n > 0:
+                n, remainder = divmod(n - 1, 26)
+                string = chr(65 + remainder) + string
+            return string
+        
+        col_letter = get_column_letter(column)
 
         updates = []
 
