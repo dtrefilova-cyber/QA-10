@@ -541,7 +541,7 @@ if run_openai or run_claude:
         dict_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("DICT")
         replacements = load_replacements(dict_sheet)
 
-        kb_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("КB")
+        kb_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("KB")
         kb_data = kb_sheet.get_all_records()
         
     except Exception as e:
