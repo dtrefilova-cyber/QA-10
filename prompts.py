@@ -63,10 +63,24 @@ def get_full_analysis_prompt(intro, middle, ending, comment):
 ---
 
 2. Спроба презентації  
-Перевір:
-- є пропозиція  
-- є пояснення  
-- є дія  
+
+Умови перевірки:
+Менеджер:
+- назвав слот/активність (є пропозиція)
+- пояснив, що це
+- сказав, що клієнту потрібно зробити
+
+Рівні:
+- "none" — пропозиція відсутня
+- "partial" — є тільки згадка або часткове пояснення
+- "full" — є пропозиція + пояснення + дія
+
+ВАЖЛИВО:
+- “подивіться на сайті” без пояснення → "partial"
+- якщо немає пропозиції → "none"
+
+Поверни у JSON:
+"presentation_level": "none" | "partial" | "full" 
 
 ---
 
@@ -120,14 +134,20 @@ def get_full_analysis_prompt(intro, middle, ending, comment):
 
 8. Якість мовлення  
 
-Оцінка:
-- 0 — складно сприймати  
-- 2.5 — зрозуміла мова  
+Умови перевірки:
+Оціни зрозумілість мови менеджера по тексту діалогу
 
-Правила:
-- тільки текст  
-- не враховуй дикцію  
-- проста мова — ок  
+Рівні:
+- "bad" — складно сприймати (зламані або нелогічні фрази)
+- "good" — мова зрозуміла
+
+ВАЖЛИВО:
+- оцінюється тільки текст
+- дикція не враховується
+- проста мова — це нормально
+
+Поверни у JSON:
+"speech_quality": "bad" | "good"
 
 ---
 
@@ -229,7 +249,7 @@ def get_full_analysis_prompt(intro, middle, ending, comment):
   "purpose_present": boolean,
 
   "has_presentation": boolean,
-  "presentation_score": number,
+  "presentation_level": "none" | "partial" | "full",
 
   "followup_type": "none" | "offer" | "exact_time",
 
@@ -245,7 +265,7 @@ def get_full_analysis_prompt(intro, middle, ending, comment):
   "comment_match_level": "none" | "partial" | "full",
   "comment_complete": boolean,
 
-  "speech_quality_score": number
+  "speech_quality": "bad" | "good"
 }}
 """
 
