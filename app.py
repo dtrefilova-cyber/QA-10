@@ -585,7 +585,8 @@ if run_openai or run_claude:
                     total_score = sum(scores.values())
 
                     # 🟢 спочатку оцінки
-                    write_to_google_sheet(sheet, call, scores)
+                    res = write_to_google_sheet(sheet, call, scores) 
+                    st.write("WRITE RESULT:", res)
 
                     # 🟢 запис у таблицю менеджера (твоя структура)
                     sheet.append_row([
