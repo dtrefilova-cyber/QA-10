@@ -66,7 +66,10 @@ def get_full_analysis_prompt(intro, middle, ending, comment):
 - ім’я менеджера  
 - компанія  
 - ім’я клієнта  
-- причина або питання  
+- причина або питання
+
+Додатково:
+- якщо менеджер задає дружнє питання (як справи / як настрій) → це також враховується як елемент контакту
 
 ---
 
@@ -275,13 +278,15 @@ true — якщо менеджер приписує клієнту стан аб
   "company_present": boolean,
   "client_name_used": boolean,
   "purpose_present": boolean,
+  "friendly_question": boolean,
 
   "presentation_level": "none" | "partial" | "full",
 
   "followup_type": "none" | "offer" | "exact_time",
 
   "bonus_offered": boolean,
-  "bonus_conditions": array,
+  "bonus_has_type": boolean,
+  "bonus_has_duration": boolean,
 
   "has_farewell": boolean,
   "is_limited_dialogue": boolean,
@@ -289,6 +294,8 @@ true — якщо менеджер приписує клієнту стан аб
   "objection_detected": boolean,
   "continuation_level": "none" | "weak" | "strong",
   "client_wants_to_end": boolean,
+
+  "assumption_made": boolean,
 
   "comment_match_level": "none" | "partial" | "full",
   "comment_complete": boolean,
