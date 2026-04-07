@@ -196,7 +196,17 @@ def clean_and_structure(dialogue, replacements):
     prompt = f"""
 Ти отримуєш транскрипт дзвінка після speech-to-text.
 
-Використовуй словник замін:
+Словник замін є ОБОВʼЯЗКОВИМ.
+
+Якщо слово або фраза присутні у словнику:
+- використовуй ТІЛЬКИ варіант зі словника
+- навіть якщо тобі здається, що інший варіант правильніший
+
+ЗАБОРОНЕНО:
+- змінювати слова, які є у словнику
+- створювати власні варіанти, якщо є словник
+
+Якщо є конфлікт між словником і твоєю логікою — пріоритет має словник.
 {dictionary_text}
 
 Правила:
@@ -531,9 +541,8 @@ if run_openai or run_claude:
 
             # жорсткі заміни
             transcript = apply_replacements(transcript, replacements)
-
-            # GPT вже після словника
             clean_dialogue = clean_and_structure(transcript, replacements)
+            clean_dialogue = apply_replacements(clean_dialogue, replacements)
 
             if run_openai:
                 features = extract_features_openai(clean_dialogue, call["manager_comment"])
