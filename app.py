@@ -73,94 +73,39 @@ for row in range(5):
             })
 
 # ================= TRANSCRIPTION =================
+import requests
+
 def transcribe_audio(url):
+    """
+    Транскрипція аудіо через Whisper (OpenAI)
+    """
+
+    # якщо немає посилання — одразу вихід
     if not url:
         return None
 
     try:
-        r = requests.post(
-            "https://api.deepgram.com/v1/listen",
-            headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"},
-            params={
-                "model": "nova-2",
-                "smart_format": "true",
-                "punctuate": "true",
-                "utterances": "true",
-                "multichannel": "true",
-                "diarize": "true",
-                "language": "uk"
-            },
-            json={"url": url}
+        # завантажуємо аудіо по URL
+        response = requests.get(url)
+
+        # перевірка статусу
+        if response.status_code != 200:
+            st.error(f"Не вдалося завантажити аудіо: {response.status_code}")
+            return None
+
+        audio_bytes = response.content
+
+        # відправляємо в Whisper
+        transcription = client.audio.transcriptions.create(
+            model="gpt-4o-transcribe",
+            file=("audio.wav", audio_bytes)
         )
 
-        if r.status_code != 200:
-            st.error(f"Deepgram error: {r.text}")
-            return None
-
-        data = r.json()
-        results = data.get("results", {})
-
-        channels = results.get("channels", [])
-        utterances = results.get("utterances", [])
-
-        all_words = []
-
-        # fallback якщо нема channels, але є utterances
-        if not channels and utterances:
-            dialogue = []
-            for u in utterances:
-                speaker = f"ch_{u.get('speaker', 0)}"
-                text = u.get("transcript", "")
-                if text:
-                    dialogue.append(f"{speaker}: {text}")
-            return "\n".join(dialogue)
-
-        for ch_index, ch in enumerate(channels):
-            alternatives = ch.get("alternatives", [])
-            if not alternatives:
-                continue
-
-            words = alternatives[0].get("words", [])
-
-            for w in words:
-                all_words.append({
-                    "word": w.get("word", ""),
-                    "start": w.get("start", 0),
-                    "end": w.get("end", 0),
-                    "speaker": f"ch_{ch_index}"
-                })
-
-        if not all_words:
-            return None
-
-        all_words.sort(key=lambda x: x["start"])
-
-        dialogue = []
-        current_speaker = all_words[0]["speaker"]
-        current_phrase = []
-        last_end = all_words[0]["end"]
-
-        for w in all_words:
-            speaker = w["speaker"]
-            pause = w["start"] - last_end
-
-            if speaker != current_speaker or pause > 0.5:
-                if current_phrase:
-                    dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
-
-                current_phrase = []
-                current_speaker = speaker
-
-            current_phrase.append(w["word"])
-            last_end = w["end"]
-
-        if current_phrase:
-            dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
-
-        return "\n".join(dialogue)
+        # повертаємо текст
+        return transcription.text
 
     except Exception as e:
-        st.error(f"Transcription exception: {str(e)}")
+        st.error(f"Whisper error: {str(e)}")
         return None
 
 
