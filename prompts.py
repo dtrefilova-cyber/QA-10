@@ -273,9 +273,10 @@ def get_full_analysis_prompt(intro, middle, ending, comment):
   "followup_type": "none" | "offer" | "exact_time",
 
   "bonus_offered": boolean,
-  "bonus_conditions": [],
+  "bonus_conditions": array,
 
   "has_farewell": boolean,
+  "is_limited_dialogue": boolean,
 
   "objection_detected": boolean,
   "continuation_level": "none" | "weak" | "strong",
