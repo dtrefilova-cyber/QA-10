@@ -443,23 +443,27 @@ def score_call(f, meta, dialogue=None):
     else:
         s["Оформлення картки"] = 5
 
-    # ---------------- Утримання ----------------
-    lvl = f.get("continuation_level", "none")
+давай # ---------------- Утримання ----------------
+   lvl = f.get("continuation_level", "none")
 
+# ---------------- Утримання ----------------
+if not f.get("client_wants_to_end"):
+    s["Утримання клієнта"] = 20
+else:
     s["Утримання клієнта"] = (
-        20 if lvl == "strong"
-        else 15 if lvl == "weak"
-        else 10
+        15 if lvl == "strong"
+        else 10 if lvl == "weak"
+        else 0
     )
 
-    # ---------------- Заперечення ----------------
+# ---------------- Заперечення ----------------
+if not f.get("objection_detected"):
+    s["Робота із запереченнями"] = 10
+else:
     s["Робота із запереченнями"] = (
-        10 if not f["objection_detected"]
-        else (
-            10 if lvl == "strong"
-            else 5 if lvl == "weak"
-            else 0
-        )
+        10 if lvl == "strong"
+        else 5 if lvl == "weak"
+        else 0
     )
 
     return s
