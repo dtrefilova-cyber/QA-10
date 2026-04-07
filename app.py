@@ -176,12 +176,15 @@ def load_replacements(sheet):
     except Exception:
         return {}
 
+import re
+
 def apply_replacements(text, replacements):
     if not text:
         return text
 
     for k, v in replacements.items():
-        text = text.replace(k, v)
+        pattern = re.compile(rf"{re.escape(k)}", re.IGNORECASE)
+        text = pattern.sub(v, text)
 
     return text
 
@@ -377,12 +380,13 @@ def score_call(f, meta, dialogue=None):
 
     # ---------------- Контакт ----------------
     elements = sum([
-        f["manager_name_present"],
-        f["manager_position_present"],
-        f["company_present"],
-        f["client_name_used"],
-        f["purpose_present"]
-    ])
+    f["manager_name_present"],
+    f["manager_position_present"],
+    f["company_present"],
+    f["client_name_used"],
+    f["purpose_present"],
+    f.get("friendly_question", False)
+])
 
     s["Встановлення контакту"] = (
         7.5 if elements >= 4 else
@@ -410,7 +414,18 @@ def score_call(f, meta, dialogue=None):
     )
 
     # ---------------- Бонус ----------------
-    cond = len(set(f.get("bonus_conditions", [])))
+    text = (dialogue or "").lower()
+    
+    bonus_keywords = [
+        "бонус", "депозит", "вейджер", "відіграш",
+        "48 год", "48год", "термін", "обмеження",
+        "оберти", "фріспіни"
+    ]
+    
+    found = [kw for kw in bonus_keywords if kw in text]
+    
+    cond = len(set(found))
+    
     s["Пропозиція бонусу"] = (
         10 if cond >= 2 else
         5 if cond == 1 else
