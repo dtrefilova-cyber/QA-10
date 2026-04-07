@@ -260,9 +260,11 @@ def apply_defaults(features):
         "company_present": False,
         "client_name_used": False,
         "purpose_present": False,
+        "friendly_question": False,
 
         "bonus_offered": False,
-        "bonus_conditions": [],
+        "bonus_has_type": False,
+        "bonus_has_duration": False,
 
         "followup_type": "none",
 
@@ -271,10 +273,15 @@ def apply_defaults(features):
         "continuation_level": "none",
 
         "has_farewell": False,
+        "is_limited_dialogue": False,
 
-        # 🔴 НОВЕ
         "presentation_level": "none",
-        "speech_quality": "bad"
+        "speech_quality": "bad",
+
+        "assumption_made": False,
+
+        "comment_match_level": "none",
+        "comment_complete": False
     }
 
     for k, v in defaults.items():
@@ -310,7 +317,6 @@ def extract_features_openai(dialogue, comment):
 
 def extract_features_claude(dialogue, comment):
     intro, middle, ending = extract_segments(dialogue)
-    
     prompt = get_full_analysis_prompt(intro, middle, ending, comment)
 
     try:
