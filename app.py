@@ -22,6 +22,8 @@ claude_client = anthropic.Anthropic(
 )
 
 LOG_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
+DICT_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
+KB_SHEET_ID = "1yZbtao1P1Xa0r6ZJAnjkJWikxcWQ90XbXvaT7EWQKeU"
 
 # ================= HEADER =================
 st.markdown("""
@@ -562,11 +564,16 @@ if run_openai or run_claude:
             transcript = apply_replacements(transcript, replacements)
             clean_dialogue = clean_and_structure(transcript, replacements)
             clean_dialogue = apply_replacements(clean_dialogue, replacements)
+            presentation_detected = detect_presentation(clean_dialogue, kb_data)
 
             if run_openai:
                 features = extract_features_openai(clean_dialogue, call["manager_comment"])
             else:
                 features = extract_features_claude(clean_dialogue, call["manager_comment"])
+            
+            # фільтр через базу знань
+            if not presentation_detected:
+                features["presentation_level"] = "none"
 
             if not features:
                 st.warning("Помилка аналізу")
