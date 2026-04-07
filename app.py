@@ -74,61 +74,37 @@ for row in range(5):
 
 # ================= TRANSCRIPTION =================
 import requests
+from io import BytesIO
 
 def transcribe_audio(url):
-    """
-    Транскрипція аудіо через Whisper (OpenAI)
-    """
-
-    # якщо немає посилання — одразу вихід
     if not url:
         return None
 
     try:
-        # завантажуємо аудіо по URL
-        response = requests.get(url)
+        response = requests.get(url, allow_redirects=True)
 
-        # перевірка статусу
         if response.status_code != 200:
-            st.error(f"Не вдалося завантажити аудіо: {response.status_code}")
+            st.error(f"Помилка завантаження: {response.status_code}")
             return None
 
-        audio_bytes = response.content
+        # якщо файл дуже маленький — це не аудіо
+        if len(response.content) < 10000:
+            st.error("Це не аудіо (або доступ закритий)")
+            return None
 
-        # відправляємо в Whisper
-        transcription = client.audio.transcriptions.create(
+        audio_file = BytesIO(response.content)
+        audio_file.name = "audio.mp3"
+
+        result = client.audio.transcriptions.create(
             model="gpt-4o-transcribe",
-            file=("audio.wav", audio_bytes)
+            file=audio_file
         )
 
-        # повертаємо текст
-        return transcription.text
+        return result.text
 
     except Exception as e:
-        st.error(f"Whisper error: {str(e)}")
+        st.error(f"Whisper error: {e}")
         return None
-
-
-# ================= DICT =================
-def load_replacements(sheet):
-    try:
-        data = sheet.get_all_records()
-        return {
-            row["raw"]: row["correct"]
-            for row in data
-            if row.get("raw") and row.get("correct")
-        }
-    except Exception:
-        return {}
-
-def apply_replacements(text, replacements):
-    if not text:
-        return text
-
-    for k, v in replacements.items():
-        text = text.replace(k, v)
-
-    return text
 
 
 # ================= CLEAN =================
