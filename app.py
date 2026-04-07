@@ -176,12 +176,15 @@ def load_replacements(sheet):
     except Exception:
         return {}
 
+import re
+
 def apply_replacements(text, replacements):
     if not text:
         return text
 
     for k, v in replacements.items():
-        text = text.replace(k, v)
+        pattern = re.compile(rf"\b{re.escape(k)}\b", re.IGNORECASE)
+        text = pattern.sub(v, text)
 
     return text
 
@@ -200,8 +203,10 @@ def clean_and_structure(dialogue, replacements):
 {dictionary_text}
 
 Правила:
+- ОБОВʼЯЗКОВО використовуй словник замін
+- якщо слово є у словнику — використовуй тільки варіант зі словника
+- не вигадуй власні варіанти, якщо є словник
 - виправляй помилки розпізнавання
-- можна виправляти фрази, якщо вони зламані
 - не змінюй сенс
 - не скорочуй текст
 
@@ -515,6 +520,7 @@ if run_openai or run_claude:
         google_client = connect_google()
         dict_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("DICT")
         replacements = load_replacements(dict_sheet)
+        st.write("DICT:", replacements)
     except Exception as e:
         st.error(f"Google connect error: {e}")
 
@@ -529,11 +535,11 @@ if run_openai or run_claude:
                 st.warning("Немає транскрипції")
                 continue
 
-            # жорсткі заміни
-            transcript = apply_replacements(transcript, replacements)
-
-            # GPT вже після словника
+            # спочатку GPT
             clean_dialogue = clean_and_structure(transcript, replacements)
+            
+            # потім ЖОРСТКО словник ще раз
+            clean_dialogue = apply_replacements(clean_dialogue, replacements)
 
             if run_openai:
                 features = extract_features_openai(clean_dialogue, call["manager_comment"])
