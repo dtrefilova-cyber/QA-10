@@ -190,6 +190,25 @@ def apply_replacements(text, replacements):
 
     return text
 
+def detect_presentation(dialogue, kb_data):
+    if not dialogue:
+        return False
+
+    text = dialogue.lower()
+
+    for row in kb_data:
+        name = (row.get("Name") or "").lower()
+        aliases = (row.get("Aliases") or "").lower().split(";")
+
+        variants = [name] + aliases
+
+        for v in variants:
+            v = v.strip()
+            if v and v in text:
+                return True
+
+    return False
+
 
 # ================= CLEAN =================
 def clean_and_structure(dialogue, replacements):
