@@ -443,8 +443,8 @@ def score_call(f, meta, dialogue=None):
     else:
         s["Оформлення картки"] = 5
 
-давай # ---------------- Утримання ----------------
-   lvl = f.get("continuation_level", "none")
+# ---------------- Утримання ----------------
+lvl = f.get("continuation_level", "none")
 
 # ---------------- Утримання ----------------
 if not f.get("client_wants_to_end"):
