@@ -406,18 +406,15 @@ def score_call(f, meta, dialogue=None):
 
     # ---------------- Передзвон ----------------
     repeat = meta["repeat_call"]
-
-    if fup == "none":
+    
+    if fup in ["none", "offer", "exact_time"]:
         s["Передзвон клієнту"] = 15
-    else:
-        if fup in ["offer", "exact_time"]:
-            s["Передзвон клієнту"] = 15
     else:
         s["Передзвон клієнту"] = (
             15 if repeat == "так, був протягом години"
             else 10 if repeat == "так, був протягом 2 годин"
             else 0
-    )
+        )
 
     # ---------------- Не додумувати ----------------
     if f.get("assumption_made"):
