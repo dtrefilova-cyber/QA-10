@@ -410,14 +410,20 @@ def score_call(f, meta, dialogue=None):
     if fup == "none":
         s["Передзвон клієнту"] = 15
     else:
+        if fup in ["offer", "exact_time"]:
+            s["Передзвон клієнту"] = 15
+    else:
         s["Передзвон клієнту"] = (
             15 if repeat == "так, був протягом години"
             else 10 if repeat == "так, був протягом 2 годин"
             else 0
-        )
+    )
 
     # ---------------- Не додумувати ----------------
-    s["Не додумувати"] = 5
+    if f.get("assumption_made"):
+        s["Не додумувати"] = 2.5
+    else:
+        s["Не додумувати"] = 5
 
     # ---------------- Якість мовлення ----------------
     quality = f.get("speech_quality", "bad")
