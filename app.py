@@ -3,7 +3,13 @@ import pandas as pd
 import requests
 import json
 import re
-from google_sheets import connect_google, write_to_google_sheet, load_managers_config
+from google_sheets import (
+    append_manager_log,
+    append_qa_log,
+    connect_google,
+    load_managers_config,
+    write_to_google_sheet,
+)
 from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
@@ -741,6 +747,7 @@ if run_openai or run_claude:
             scores = score_call(features, call, clean_dialogue)
             comment = generate_qa_comment(clean_dialogue, scores)
             comment_for_sheet = format_comment_for_sheet(comment)
+            ai_label = "OpenAI" if run_openai else "Claude"
 
             st.session_state["results"].append({
                 "scores": scores,
@@ -764,27 +771,24 @@ if run_openai or run_claude:
                     st.write("WRITE RESULT:", res)
 
                     # 🟢 запис у таблицю менеджера (твоя структура)
-                    sheet.append_row([
-                        call["client_id"],          # 1
-                        comment_for_sheet,          # 2
-                        total_score,                # 3
-                        call["call_date"],          # 4
-                        call["check_date"]          # 5
-                    ], value_input_option="RAW")
+                    append_manager_log(
+                        sheet,
+                        call,
+                        comment_for_sheet,
+                        total_score,
+                        ai_label
+                    )
 
                     # 🟢 лог таблиця
-                    log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
-                    log_sheet.append_row([
-                        call["check_date"],
-                        call["client_id"],
-                        call["project"],
-                        call["ret_manager"],
-                        call["url"],
+                    log_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("Лист 1")
+                    append_qa_log(
+                        log_sheet,
+                        call,
                         transcript,
                         clean_dialogue,
                         comment,
-                        sum(scores.values())
-                    ])
+                        total_score
+                    )
 
                 except Exception as e:
                     st.error(f"Google error: {e}")
