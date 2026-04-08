@@ -33,13 +33,30 @@ def extract_sheet_id(sheet_value):
 def load_managers_config(google_client, log_sheet_id, worksheet_name="MANAGERS"):
     """Зчитує список менеджерів і проєктів з технічного аркуша."""
     worksheet = google_client.open_by_key(log_sheet_id).worksheet(worksheet_name)
-    rows = worksheet.get_all_records()
+    values = worksheet.get_all_values()
+
+    if not values:
+        return []
+
+    headers = [str(header).strip().upper() for header in values[0]]
+    rows = values[1:]
+
+    def get_value(row, column_name):
+        try:
+            index = headers.index(column_name)
+        except ValueError:
+            return ""
+
+        if index >= len(row):
+            return ""
+
+        return row[index]
 
     managers = []
     for row in rows:
-        manager_name = str(row.get("MANAGERS_NAME", "")).strip()
-        project_name = str(row.get("PROJECT", "")).strip()
-        sheet_id = extract_sheet_id(row.get("SHEET_ID", ""))
+        manager_name = str(get_value(row, "MANAGERS_NAME")).strip()
+        project_name = str(get_value(row, "PROJECT")).strip()
+        sheet_id = extract_sheet_id(get_value(row, "SHEET_ID"))
 
         if not manager_name or not project_name or not sheet_id:
             continue
