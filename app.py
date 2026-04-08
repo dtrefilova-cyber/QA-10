@@ -3,7 +3,7 @@ import pandas as pd
 import requests
 import json
 import re
-from google_sheets import connect_google, write_to_google_sheet
+from google_sheets import connect_google, write_to_google_sheet, load_managers_config
 from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
@@ -39,6 +39,20 @@ qa_managers_list = [
     "Дар'я", "Надя", "Настя", "Владимира", "Діана", "Руслана", "Олексій"
 ]
 
+@st.cache_data(ttl=300)
+def get_managers_config():
+    google_client = connect_google()
+    return load_managers_config(google_client, LOG_SHEET_ID)
+
+
+try:
+    managers_config = get_managers_config()
+except Exception as e:
+    managers_config = []
+    st.error(f"Помилка завантаження менеджерів: {e}")
+
+projects_list = sorted({item["project"] for item in managers_config})
+
 # ================= INPUT =================
 calls = []
 for row in range(5):
@@ -47,7 +61,31 @@ for row in range(5):
         with col.expander(f"📞 Дзвінок {idx}"):
             audio_url = st.text_input("Посилання", key=f"url_{idx}")
             qa_manager = st.selectbox("QA", qa_managers_list, key=f"qa_{idx}")
-            ret_manager = st.text_input("Менеджер", key=f"ret_{idx}")
+            selected_project = st.selectbox(
+                "Проєкт",
+                projects_list,
+                index=None,
+                placeholder="Оберіть проєкт",
+                key=f"project_{idx}",
+                disabled=not projects_list
+            )
+            project_managers = [
+                item for item in managers_config
+                if item["project"] == selected_project
+            ]
+            manager_names = [item["manager_name"] for item in project_managers]
+            selected_manager = st.selectbox(
+                "Менеджер РЕТ",
+                manager_names,
+                index=None,
+                placeholder="Оберіть менеджера",
+                key=f"ret_{idx}",
+                disabled=not manager_names
+            )
+            selected_manager_data = next(
+                (item for item in project_managers if item["manager_name"] == selected_manager),
+                None
+            )
             client_id = st.text_input("ID", key=f"client_{idx}")
             call_date = st.text_input("Дата", key=f"date_{idx}")
             bonus_check = st.selectbox(
@@ -65,7 +103,9 @@ for row in range(5):
             calls.append({
                 "url": audio_url.strip(),
                 "qa_manager": qa_manager,
-                "ret_manager": ret_manager,
+                "project": selected_project or "",
+                "ret_manager": selected_manager or "",
+                "ret_sheet_id": selected_manager_data["sheet_id"] if selected_manager_data else "",
                 "client_id": client_id,
                 "call_date": call_date,
                 "check_date": check_date.strftime("%d-%m-%Y"),
@@ -608,8 +648,12 @@ if run_openai or run_claude:
 
             if google_client:
                 try:
+                    if not call["ret_sheet_id"]:
+                        st.error("Не обрано проєкт або менеджера РЕТ")
+                        continue
+
                     # 🟢 таблиця менеджера
-                    sheet = google_client.open(call["ret_manager"]).sheet1
+                    sheet = google_client.open_by_key(call["ret_sheet_id"]).sheet1
 
                     # 🟢 формуємо оцінку одним рядком
                     total_score = sum(scores.values())
@@ -632,6 +676,7 @@ if run_openai or run_claude:
                     log_sheet.append_row([
                         call["check_date"],
                         call["client_id"],
+                        call["project"],
                         call["ret_manager"],
                         call["url"],
                         transcript,
