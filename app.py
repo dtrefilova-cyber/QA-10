@@ -39,7 +39,6 @@ qa_managers_list = [
     "Дар'я", "Надя", "Настя", "Владимира", "Діана", "Руслана", "Олексій"
 ]
 
-@st.cache_data(ttl=300)
 def get_managers_config():
     google_client = connect_google()
     return load_managers_config(google_client, LOG_SHEET_ID)
@@ -52,6 +51,13 @@ except Exception as e:
     st.error(f"Помилка завантаження менеджерів: {e}")
 
 projects_list = sorted({item["project"] for item in managers_config})
+
+if not managers_config:
+    st.warning(
+        "Список проєктів і менеджерів не завантажився з аркуша MANAGERS. "
+        "Перевірте, що в першому рядку є заголовки MANAGERS_NAME, PROJECT, SHEET_ID "
+        "і що в колонці SHEET_ID заповнені значення."
+    )
 
 # ================= INPUT =================
 calls = []
