@@ -30,16 +30,49 @@ def extract_sheet_id(sheet_value):
     return value
 
 
+def normalize_header(value):
+    """Нормалізує назви колонок: прибирає BOM, зайві пробіли та службові символи."""
+    text = str(value or "")
+    text = text.replace("\ufeff", "").replace("\u00a0", " ").strip().upper()
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+
 def load_managers_config(google_client, log_sheet_id, worksheet_name="MANAGERS"):
     """Зчитує список менеджерів і проєктів з технічного аркуша."""
     worksheet = google_client.open_by_key(log_sheet_id).worksheet(worksheet_name)
     values = worksheet.get_all_values()
 
     if not values:
-        return []
+        return {
+            "managers": [],
+            "headers": [],
+            "header_row_index": None,
+            "raw_rows_count": 0,
+            "valid_rows_count": 0
+        }
 
-    headers = [str(header).strip().upper() for header in values[0]]
-    rows = values[1:]
+    required_headers = {"MANAGERS_NAME", "PROJECT", "SHEET_ID"}
+    header_row_index = None
+    headers = []
+
+    for idx, row in enumerate(values[:10]):
+        normalized_row = [normalize_header(cell) for cell in row]
+        if required_headers.issubset(set(normalized_row)):
+            header_row_index = idx
+            headers = normalized_row
+            break
+
+    if header_row_index is None:
+        return {
+            "managers": [],
+            "headers": [normalize_header(cell) for cell in values[0]],
+            "header_row_index": None,
+            "raw_rows_count": max(len(values) - 1, 0),
+            "valid_rows_count": 0
+        }
+
+    rows = values[header_row_index + 1:]
 
     def get_value(row, column_name):
         try:
@@ -67,7 +100,13 @@ def load_managers_config(google_client, log_sheet_id, worksheet_name="MANAGERS")
             "sheet_id": sheet_id
         })
 
-    return managers
+    return {
+        "managers": managers,
+        "headers": headers,
+        "header_row_index": header_row_index,
+        "raw_rows_count": len(rows),
+        "valid_rows_count": len(managers)
+    }
 
 
 # 🔹 Маппінг критеріїв (де і як вносяться оцінки)
