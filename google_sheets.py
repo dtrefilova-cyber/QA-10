@@ -214,7 +214,7 @@ def append_manager_log(sheet, call, comment, total_score, ai_label, start_row=20
 
 
 def append_qa_log(sheet, call, transcript, clean_dialogue, comment, total_score):
-    """Додає лог перевірки у QA_LOG_CALLS / Лист 1."""
+    """Додає лог перевірки у QA_LOG_CALLS / Лист1."""
     row_index = find_next_row(sheet, start_row=1, key_column=1)
     values = [[
         call.get("check_date", ""),
