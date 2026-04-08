@@ -44,8 +44,22 @@ def get_managers_config():
     return load_managers_config(google_client, LOG_SHEET_ID)
 
 
+managers_meta = {
+    "headers": [],
+    "header_row_index": None,
+    "raw_rows_count": 0,
+    "valid_rows_count": 0
+}
+
 try:
-    managers_config = get_managers_config()
+    managers_payload = get_managers_config()
+    managers_config = managers_payload.get("managers", [])
+    managers_meta = {
+        "headers": managers_payload.get("headers", []),
+        "header_row_index": managers_payload.get("header_row_index"),
+        "raw_rows_count": managers_payload.get("raw_rows_count", 0),
+        "valid_rows_count": managers_payload.get("valid_rows_count", 0)
+    }
 except Exception as e:
     managers_config = []
     st.error(f"Помилка завантаження менеджерів: {e}")
@@ -55,8 +69,14 @@ projects_list = sorted({item["project"] for item in managers_config})
 if not managers_config:
     st.warning(
         "Список проєктів і менеджерів не завантажився з аркуша MANAGERS. "
-        "Перевірте, що в першому рядку є заголовки MANAGERS_NAME, PROJECT, SHEET_ID "
+        "Перевірте, що в аркуші є заголовки MANAGERS_NAME, PROJECT, SHEET_ID "
         "і що в колонці SHEET_ID заповнені значення."
+    )
+    st.caption(
+        f"Діагностика: headers={managers_meta['headers']}, "
+        f"header_row={managers_meta['header_row_index']}, "
+        f"raw_rows={managers_meta['raw_rows_count']}, "
+        f"valid_rows={managers_meta['valid_rows_count']}"
     )
 
 # ================= INPUT =================
