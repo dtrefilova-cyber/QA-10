@@ -14,6 +14,7 @@ from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
 from prompts import get_full_analysis_prompt, get_qa_comment_prompt
+from prompts import get_full_analysis_prompt_claude, get_full_analysis_prompt_openai
 import anthropic
 
 # ================= CONFIG =================
@@ -440,7 +441,7 @@ def apply_defaults(features):
 def extract_features_openai(dialogue, comment, kb_context=""):
     intro, middle, ending = extract_segments(dialogue)
     try:
-        prompt = get_full_analysis_prompt(intro, middle, ending, comment, kb_context)
+        prompt = get_full_analysis_prompt_openai(intro, middle, ending, comment, kb_context)
     except TypeError:
         prompt = get_full_analysis_prompt(intro, middle, ending, comment)
 
@@ -468,7 +469,7 @@ def extract_features_openai(dialogue, comment, kb_context=""):
 def extract_features_claude(dialogue, comment, kb_context=""):
     intro, middle, ending = extract_segments(dialogue)
     try:
-        prompt = get_full_analysis_prompt(intro, middle, ending, comment, kb_context)
+        prompt = get_full_analysis_prompt_claude(intro, middle, ending, comment, kb_context)
     except TypeError:
         prompt = get_full_analysis_prompt(intro, middle, ending, comment)
 
@@ -780,7 +781,7 @@ if run_openai or run_claude:
                     )
 
                     # 🟢 лог таблиця
-                    log_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("Лист1")
+                    log_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("Лист 1")
                     append_qa_log(
                         log_sheet,
                         call,
