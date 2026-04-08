@@ -412,6 +412,7 @@ def apply_defaults(features):
         "bonus_offered": False,
         "bonus_has_type": False,
         "bonus_has_duration": False,
+        "bonus_has_value": False,
 
         "followup_type": "none",
 
@@ -555,23 +556,15 @@ def score_call(f, meta, dialogue=None):
     )
 
     # ---------------- Бонус ----------------
-    text = (dialogue or "").lower()
-    
-    bonus_keywords = [
-        "бонус", "депозит", "вейджер", "відіграш",
-        "48 год", "48год", "термін", "обмеження",
-        "оберти", "фріспіни"
-    ]
-    
-    found = [kw for kw in bonus_keywords if kw in text]
-    
-    cond = len(set(found))
-    
-    s["Пропозиція бонусу"] = (
-        10 if cond >= 2 else
-        5 if cond == 1 else
-        0
-    )
+    if not f.get("bonus_offered"):
+        s["Пропозиція бонусу"] = 0
+    else:
+        bonus_conditions = sum([
+            bool(f.get("bonus_has_type")),
+            bool(f.get("bonus_has_duration")),
+            bool(f.get("bonus_has_value"))
+        ])
+        s["Пропозиція бонусу"] = 10 if bonus_conditions >= 2 else 5
 
     # ---------------- Завершення ----------------
     s["Завершення розмови"] = 5 if f.get("has_farewell") else 0
