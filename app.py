@@ -411,6 +411,7 @@ def apply_defaults(features):
         "objection_detected": False,
         "client_wants_to_end": False,
         "continuation_level": "none",
+        "continuation_behavior": "neutral",
 
         "has_farewell": False,
         "is_limited_dialogue": False,
@@ -432,7 +433,10 @@ def apply_defaults(features):
 
 def extract_features_openai(dialogue, comment, kb_context=""):
     intro, middle, ending = extract_segments(dialogue)
-    prompt = get_full_analysis_prompt(intro, middle, ending, comment, kb_context)
+    try:
+        prompt = get_full_analysis_prompt(intro, middle, ending, comment, kb_context)
+    except TypeError:
+        prompt = get_full_analysis_prompt(intro, middle, ending, comment)
 
     try:
         res = client.chat.completions.create(
@@ -457,7 +461,10 @@ def extract_features_openai(dialogue, comment, kb_context=""):
 
 def extract_features_claude(dialogue, comment, kb_context=""):
     intro, middle, ending = extract_segments(dialogue)
-    prompt = get_full_analysis_prompt(intro, middle, ending, comment, kb_context)
+    try:
+        prompt = get_full_analysis_prompt(intro, middle, ending, comment, kb_context)
+    except TypeError:
+        prompt = get_full_analysis_prompt(intro, middle, ending, comment)
 
     try:
         response = claude_client.messages.create(
@@ -608,11 +615,19 @@ def score_call(f, meta, dialogue=None):
     lvl = f.get("continuation_level", "none")
 
     if not f.get("client_wants_to_end"):
-        s["Утримання клієнта"] = 20
+        behavior = f.get("continuation_behavior", "neutral")
+        s["Утримання клієнта"] = (
+            20 if behavior == "active"
+            else 15 if behavior == "neutral"
+            else 10 if behavior == "passive"
+            else 0
+        )
     else:
         s["Утримання клієнта"] = (
-            15 if lvl == "strong"
-            else 10 if lvl == "weak"
+            20 if lvl == "strong"
+            else 15 if lvl == "weak"
+            else 10 if lvl == "formal"
+            else 5 if lvl == "none"
             else 0
         )
 
@@ -648,6 +663,14 @@ def generate_qa_comment(dialogue, scores):
     except Exception as e:
         st.error(f"Comment error: {e}")
         return "Помилка генерації коментаря"
+
+
+def format_comment_for_sheet(comment):
+    if not comment:
+        return ""
+
+    lines = [line.strip() for line in str(comment).splitlines() if line.strip()]
+    return " | ".join(lines)
 
 # ================= RUN =================
 if "results" not in st.session_state:
@@ -717,6 +740,7 @@ if run_openai or run_claude:
 
             scores = score_call(features, call, clean_dialogue)
             comment = generate_qa_comment(clean_dialogue, scores)
+            comment_for_sheet = format_comment_for_sheet(comment)
 
             st.session_state["results"].append({
                 "scores": scores,
@@ -742,11 +766,11 @@ if run_openai or run_claude:
                     # 🟢 запис у таблицю менеджера (твоя структура)
                     sheet.append_row([
                         call["client_id"],          # 1
-                        comment,                    # 2
+                        comment_for_sheet,          # 2
                         total_score,                # 3
                         call["call_date"],          # 4
                         call["check_date"]          # 5
-                    ])
+                    ], value_input_option="RAW")
 
                     # 🟢 лог таблиця
                     log_sheet = google_client.open_by_key(LOG_SHEET_ID).sheet1
