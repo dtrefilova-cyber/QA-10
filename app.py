@@ -47,15 +47,7 @@ for row in range(5):
         with col.expander(f"📞 Дзвінок {idx}"):
             audio_url = st.text_input("Посилання", key=f"url_{idx}")
             qa_manager = st.selectbox("QA", qa_managers_list, key=f"qa_{idx}")
-            ret_manager = st.selectbox(
-                "Менеджер",
-                list(manager_map.keys()),
-                key=f"ret_{idx}"
-            )
-            
-            project = manager_map[ret_manager]["project"]
-            st.write(f"Проєкт: {project}")
-            
+            ret_manager = st.text_input("Менеджер", key=f"ret_{idx}")
             client_id = st.text_input("ID", key=f"client_{idx}")
             call_date = st.text_input("Дата", key=f"date_{idx}")
             bonus_check = st.selectbox(
@@ -567,23 +559,6 @@ if run_openai or run_claude:
 
     try:
         google_client = connect_google()
-        
-        managers_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("MANAGERS")
-        managers_data = managers_sheet.get_all_records()
-        
-        manager_map = {
-            row["MANAGERS_NAME"]: {
-                "project": row["PROJECT"],
-                "sheet_id": row["SHEET_ID"]
-            }
-            for row in managers_data
-        }
-        
-        ret_manager = st.selectbox(
-            "Менеджер",
-            list(manager_map.keys()),
-            key=f"ret_{idx}"
-        )
         dict_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("DICT")
         replacements = load_replacements(dict_sheet)
 
@@ -633,15 +608,8 @@ if run_openai or run_claude:
 
             if google_client:
                 try:
-                    # 🟢 таблиця менеджерів
-                    manager_data = manager_map.get(ret_manager)
-
-                    if not manager_data:
-                        st.error(f"Менеджер не знайдений: {ret_manager}")
-                        continue
-                    
-                    manager_id = manager_data["sheet_id"]
-                    sheet = google_client.open_by_key(manager_id).sheet1
+                    # 🟢 таблиця менеджера
+                    sheet = google_client.open(call["ret_manager"]).sheet1
 
                     # 🟢 формуємо оцінку одним рядком
                     total_score = sum(scores.values())
