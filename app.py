@@ -148,9 +148,10 @@ for row in range(5):
             })
 
 # ================= TRANSCRIPTION =================
-def transcribe_audio(url):
+@st.cache_data(ttl=86400, show_spinner=False)
+def transcribe_audio_cached(url):
     if not url:
-        return None
+        return {"ok": False, "error": "empty url", "transcript": None}
 
     try:
         r = requests.post(
@@ -169,8 +170,7 @@ def transcribe_audio(url):
         )
 
         if r.status_code != 200:
-            st.error(f"Deepgram error: {r.text}")
-            return None
+            return {"ok": False, "error": f"Deepgram error: {r.text}", "transcript": None}
 
         data = r.json()
         results = data.get("results", {})
@@ -180,7 +180,6 @@ def transcribe_audio(url):
 
         all_words = []
 
-        # fallback якщо нема channels, але є utterances
         if not channels and utterances:
             dialogue = []
             for u in utterances:
@@ -188,7 +187,7 @@ def transcribe_audio(url):
                 text = u.get("transcript", "")
                 if text:
                     dialogue.append(f"{speaker}: {text}")
-            return "\n".join(dialogue)
+            return {"ok": True, "error": "", "transcript": "\n".join(dialogue)}
 
         for ch_index, ch in enumerate(channels):
             alternatives = ch.get("alternatives", [])
@@ -206,7 +205,7 @@ def transcribe_audio(url):
                 })
 
         if not all_words:
-            return None
+            return {"ok": False, "error": "Немає транскрипції", "transcript": None}
 
         all_words.sort(key=lambda x: x["start"])
 
@@ -232,11 +231,18 @@ def transcribe_audio(url):
         if current_phrase:
             dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
 
-        return "\n".join(dialogue)
+        return {"ok": True, "error": "", "transcript": "\n".join(dialogue)}
 
     except Exception as e:
-        st.error(f"Transcription exception: {str(e)}")
+        return {"ok": False, "error": f"Transcription exception: {str(e)}", "transcript": None}
+
+
+def transcribe_audio(url):
+    result = transcribe_audio_cached(url)
+    if not result["ok"]:
+        st.error(result["error"])
         return None
+    return result["transcript"]
 
 
 # ================= DICT =================
@@ -324,58 +330,6 @@ def build_kb_context(kb_data):
 
 
 # ================= CLEAN =================
-def clean_and_structure(dialogue, replacements):
-    if not dialogue:
-        return None
-
-    dictionary_text = "\n".join([f"{k} → {v}" for k, v in replacements.items()])
-
-    prompt = f"""
-Ти отримуєш транскрипт дзвінка після speech-to-text.
-
-Словник замін є ОБОВʼЯЗКОВИМ.
-
-Якщо слово або фраза присутні у словнику:
-- використовуй ТІЛЬКИ варіант зі словника
-- навіть якщо тобі здається, що інший варіант правильніший
-
-ЗАБОРОНЕНО:
-- змінювати слова, які є у словнику
-- створювати власні варіанти, якщо є словник
-
-Якщо є конфлікт між словником і твоєю логікою — пріоритет має словник.
-{dictionary_text}
-
-Правила:
-- виправляй помилки розпізнавання
-- можна виправляти фрази, якщо вони зламані
-- не змінюй сенс
-- не скорочуй текст
-
-Замінити:
-ch_0 → Менеджер
-ch_1 → Клієнт
-
-Поверни тільки діалог.
-"""
-
-    try:
-        res = client.chat.completions.create(
-            model="gpt-5.4",
-            temperature=0,
-            messages=[
-                {"role": "system", "content": "Виправляєш транскрипцію без зміни змісту."},
-                {"role": "user", "content": prompt + "\n\n" + dialogue}
-            ]
-        )
-
-        return res.choices[0].message.content.strip()
-
-    except Exception as e:
-        st.error(f"Cleaning error: {e}")
-        return dialogue
-
-
 def extract_segments(dialogue):
     lines = dialogue.split("\n")
     return "\n".join(lines[:5]), "\n".join(lines[5:-5]), "\n".join(lines[-5:])
@@ -439,45 +393,139 @@ def apply_defaults(features):
     return features
 
 
-def extract_features_openai(dialogue, comment, kb_context=""):
+def build_dictionary_context(replacements):
+    if not replacements:
+        return "Словник замін не переданий."
+
+    return "\n".join([f"{k} → {v}" for k, v in replacements.items()])
+
+
+def get_analysis_output_schema():
+    return """
+Поверни ONLY valid JSON такого формату:
+{
+  "cleaned_transcript": "очищений діалог",
+  "qa_comment": "готовий QA-коментар по критеріях, кожен критерій з нового рядка",
+  "features": {
+    "manager_name_present": boolean,
+    "manager_position_present": boolean,
+    "company_present": boolean,
+    "client_name_used": boolean,
+    "purpose_present": boolean,
+    "friendly_question": boolean,
+    "presentation_level": "none" | "partial" | "full",
+    "followup_type": "none" | "offer" | "exact_time",
+    "bonus_offered": boolean,
+    "bonus_has_type": boolean,
+    "bonus_has_duration": boolean,
+    "bonus_has_value": boolean,
+    "has_farewell": boolean,
+    "is_limited_dialogue": boolean,
+    "objection_detected": boolean,
+    "continuation_level": "none" | "formal" | "weak" | "strong" | "forced_end",
+    "continuation_behavior": "active" | "neutral" | "passive" | "forced_end",
+    "client_wants_to_end": boolean,
+    "assumption_made": boolean,
+    "comment_match_level": "none" | "partial" | "full",
+    "comment_complete": boolean,
+    "speech_quality": "bad" | "good"
+  }
+}
+"""
+
+
+def build_combined_analysis_prompt(prompt_body, raw_dialogue, replacements):
+    dictionary_context = build_dictionary_context(replacements)
+    return f"""
+{prompt_body}
+
+---------------------
+СЛОВНИК ЗАМІН
+---------------------
+
+Словник замін є ОБОВ'ЯЗКОВИМ.
+Якщо слово або фраза є у словнику, використовуй тільки варіант зі словника.
+Не вигадуй власних варіантів, якщо слово є у словнику.
+
+{dictionary_context}
+
+---------------------
+ОЧИСТКА ТРАНСКРИПТУ
+---------------------
+
+Спочатку очисти транскрипт:
+- виправ помилки розпізнавання
+- застосуй словник замін
+- не змінюй сенс
+- не скорочуй текст
+- заміни ch_0 на "Менеджер", ch_1 на "Клієнт"
+
+Після цього:
+- проаналізуй вже очищений транскрипт
+- сформуй готовий qa_comment у тому ж запиті
+- qa_comment має бути українською, по одному критерію на рядок
+
+{get_analysis_output_schema()}
+
+СИРИЙ ТРАНСКРИПТ:
+{raw_dialogue}
+"""
+
+
+def parse_analysis_response(text):
+    match = re.search(r"\{[\s\S]*\}", text or "")
+    if not match:
+        return None
+
+    payload = json.loads(match.group())
+    features = apply_defaults(payload.get("features", {}))
+
+    return {
+        "cleaned_transcript": (payload.get("cleaned_transcript") or "").strip(),
+        "qa_comment": (payload.get("qa_comment") or "").strip(),
+        "features": features,
+    }
+
+
+def extract_features_openai(dialogue, comment, kb_context="", replacements=None):
     intro, middle, ending = extract_segments(dialogue)
     try:
-        prompt = get_full_analysis_prompt_openai(intro, middle, ending, comment, kb_context)
+        base_prompt = get_full_analysis_prompt_openai(intro, middle, ending, comment, kb_context)
     except TypeError:
-        prompt = get_full_analysis_prompt(intro, middle, ending, comment)
+        base_prompt = get_full_analysis_prompt(intro, middle, ending, comment)
+
+    prompt = build_combined_analysis_prompt(base_prompt, dialogue, replacements or {})
 
     try:
         res = client.chat.completions.create(
             model="gpt-5.4",
             temperature=0,
             messages=[
-                {"role": "system", "content": "JSON only"},
+                {"role": "system", "content": "Return only valid JSON."},
                 {"role": "user", "content": prompt}
             ]
         )
-        text = res.choices[0].message.content
-        match = re.search(r"\{[\s\S]*\}", text)
-        if not match:
-            return {}
-
-        return apply_defaults(json.loads(match.group()))
+        parsed = parse_analysis_response(res.choices[0].message.content)
+        return parsed or {}
 
     except Exception as e:
         st.error(f"GPT error: {e}")
         return {}
 
 
-def extract_features_claude(dialogue, comment, kb_context=""):
+def extract_features_claude(dialogue, comment, kb_context="", replacements=None):
     intro, middle, ending = extract_segments(dialogue)
     try:
-        prompt = get_full_analysis_prompt_claude(intro, middle, ending, comment, kb_context)
+        base_prompt = get_full_analysis_prompt_claude(intro, middle, ending, comment, kb_context)
     except TypeError:
-        prompt = get_full_analysis_prompt(intro, middle, ending, comment)
+        base_prompt = get_full_analysis_prompt(intro, middle, ending, comment)
+
+    prompt = build_combined_analysis_prompt(base_prompt, dialogue, replacements or {})
 
     try:
         response = claude_client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=1000,
+            max_tokens=2000,
             messages=[
                 {
                     "role": "user",
@@ -486,13 +534,8 @@ def extract_features_claude(dialogue, comment, kb_context=""):
             ]
         )
 
-        text = response.content[0].text
-        match = re.search(r"\{[\s\S]*\}", text)
-
-        if not match:
-            return {}
-
-        return apply_defaults(json.loads(match.group()))
+        parsed = parse_analysis_response(response.content[0].text)
+        return parsed or {}
 
     except Exception as e:
         st.error(f"Claude error: {e}")
@@ -644,27 +687,6 @@ def score_call(f, meta, dialogue=None):
     return s
 
 
-# ================= COMMENT =================
-def generate_qa_comment(dialogue, scores):
-    try:
-        prompt = get_qa_comment_prompt(dialogue, scores)
-
-        res = client.chat.completions.create(
-            model="gpt-5.4",
-            temperature=0.2,
-            messages=[
-                {"role": "system", "content": "Ти QA-аналітик дзвінків."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-
-        return res.choices[0].message.content.strip()
-
-    except Exception as e:
-        st.error(f"Comment error: {e}")
-        return "Помилка генерації коментаря"
-
-
 def format_comment_for_sheet(comment):
     if not comment:
         return ""
@@ -711,25 +733,33 @@ if run_openai or run_claude:
                 st.warning("Немає транскрипції")
                 continue
 
-            # жорсткі заміни
             transcript = apply_replacements(transcript, replacements)
-            clean_dialogue = clean_and_structure(transcript, replacements)
-            clean_dialogue = apply_replacements(clean_dialogue, replacements)
-            presentation_detected = detect_presentation(clean_dialogue, kb_data)
 
             if run_openai:
-                features = extract_features_openai(
-                    clean_dialogue,
+                analysis_result = extract_features_openai(
+                    transcript,
                     call["manager_comment"],
-                    kb_context
+                    kb_context,
+                    replacements
                 )
             else:
-                features = extract_features_claude(
-                    clean_dialogue,
+                analysis_result = extract_features_claude(
+                    transcript,
                     call["manager_comment"],
-                    kb_context
+                    kb_context,
+                    replacements
                 )
-            
+
+            if not analysis_result:
+                st.warning("Помилка аналізу")
+                continue
+
+            clean_dialogue = analysis_result.get("cleaned_transcript") or transcript
+            clean_dialogue = apply_replacements(clean_dialogue, replacements)
+            features = analysis_result.get("features", {})
+            comment = analysis_result.get("qa_comment", "").strip()
+            presentation_detected = detect_presentation(clean_dialogue, kb_data)
+
             # фільтр через базу знань
             if not presentation_detected:
                 features["presentation_level"] = "none"
@@ -739,7 +769,8 @@ if run_openai or run_claude:
                 continue
 
             scores = score_call(features, call, clean_dialogue)
-            comment = generate_qa_comment(clean_dialogue, scores)
+            if not comment:
+                comment = "Помилка генерації коментаря"
             comment_for_sheet = format_comment_for_sheet(comment)
             ai_label = "OpenAI" if run_openai else "Claude"
 
