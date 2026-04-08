@@ -780,7 +780,7 @@ if run_openai or run_claude:
                     )
 
                     # 🟢 лог таблиця
-                    log_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("Лист 1")
+                    log_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("Лист1")
                     append_qa_log(
                         log_sheet,
                         call,
