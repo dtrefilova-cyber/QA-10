@@ -233,16 +233,30 @@ def transcribe_audio(url):
 
 
 # ================= DICT =================
+def normalize_sheet_headers(row):
+    return {
+        str(key).strip().upper(): value
+        for key, value in row.items()
+    }
+
+
 def load_replacements(sheet):
     try:
-        data = sheet.get_all_records()
+        data = [normalize_sheet_headers(row) for row in sheet.get_all_records()]
         return {
-            row["raw"]: row["correct"]
+            str(row["RAW"]).strip(): str(row["CORRECT"]).strip()
             for row in data
-            if row.get("raw") and row.get("correct")
+            if row.get("RAW") and row.get("CORRECT")
         }
     except Exception:
         return {}
+
+
+def load_kb_data(sheet):
+    try:
+        return [normalize_sheet_headers(row) for row in sheet.get_all_records()]
+    except Exception:
+        return []
 
 import re
 
@@ -263,8 +277,8 @@ def detect_presentation(dialogue, kb_data):
     text = dialogue.lower()
 
     for row in kb_data:
-        name = (row.get("Name") or "").lower()
-        aliases = (row.get("Aliases") or "").lower().split(";")
+        name = (row.get("NAME") or "").lower()
+        aliases = (row.get("ALIASES") or "").lower().split(";")
 
         variants = [name] + aliases
 
@@ -274,6 +288,32 @@ def detect_presentation(dialogue, kb_data):
                 return True
 
     return False
+
+
+def build_kb_context(kb_data):
+    lines = []
+
+    for row in kb_data:
+        name = str(row.get("NAME", "")).strip()
+        aliases = str(row.get("ALIASES", "")).strip()
+        description = str(
+            row.get("DESCRIPTION", "")
+            or row.get("INFO", "")
+            or row.get("COMMENT", "")
+        ).strip()
+
+        if not name:
+            continue
+
+        parts = [f"Продукт: {name}"]
+        if aliases:
+            parts.append(f"Аліаси: {aliases}")
+        if description:
+            parts.append(f"Опис: {description}")
+
+        lines.append(" | ".join(parts))
+
+    return "\n".join(lines)
 
 
 # ================= CLEAN =================
@@ -390,9 +430,9 @@ def apply_defaults(features):
     return features
 
 
-def extract_features_openai(dialogue, comment):
+def extract_features_openai(dialogue, comment, kb_context=""):
     intro, middle, ending = extract_segments(dialogue)
-    prompt = get_full_analysis_prompt(intro, middle, ending, comment)
+    prompt = get_full_analysis_prompt(intro, middle, ending, comment, kb_context)
 
     try:
         res = client.chat.completions.create(
@@ -415,9 +455,9 @@ def extract_features_openai(dialogue, comment):
         return {}
 
 
-def extract_features_claude(dialogue, comment):
+def extract_features_claude(dialogue, comment, kb_context=""):
     intro, middle, ending = extract_segments(dialogue)
-    prompt = get_full_analysis_prompt(intro, middle, ending, comment)
+    prompt = get_full_analysis_prompt(intro, middle, ending, comment, kb_context)
 
     try:
         response = claude_client.messages.create(
@@ -622,6 +662,8 @@ if run_openai or run_claude:
 
     google_client = None
     replacements = {}
+    kb_data = []
+    kb_context = ""
 
     try:
         google_client = connect_google()
@@ -629,7 +671,8 @@ if run_openai or run_claude:
         replacements = load_replacements(dict_sheet)
 
         kb_sheet = google_client.open_by_key(KB_SHEET_ID).worksheet("INFO")
-        kb_data = kb_sheet.get_all_records()
+        kb_data = load_kb_data(kb_sheet)
+        kb_context = build_kb_context(kb_data)
         
     except Exception as e:
         st.error(f"Google connect error: {e}")
@@ -652,9 +695,17 @@ if run_openai or run_claude:
             presentation_detected = detect_presentation(clean_dialogue, kb_data)
 
             if run_openai:
-                features = extract_features_openai(clean_dialogue, call["manager_comment"])
+                features = extract_features_openai(
+                    clean_dialogue,
+                    call["manager_comment"],
+                    kb_context
+                )
             else:
-                features = extract_features_claude(clean_dialogue, call["manager_comment"])
+                features = extract_features_claude(
+                    clean_dialogue,
+                    call["manager_comment"],
+                    kb_context
+                )
             
             # фільтр через базу знань
             if not presentation_detected:
