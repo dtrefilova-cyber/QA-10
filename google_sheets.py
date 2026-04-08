@@ -1,5 +1,6 @@
 import streamlit as st
 import gspread
+import re
 from google.oauth2.service_account import Credentials
 
 
@@ -14,6 +15,42 @@ def connect_google():
         scopes=scope
     )
     return gspread.authorize(creds)
+
+
+def extract_sheet_id(sheet_value):
+    """Повертає sheet id з повного URL або сирого значення."""
+    if not sheet_value:
+        return ""
+
+    value = str(sheet_value).strip()
+    match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", value)
+    if match:
+        return match.group(1)
+
+    return value
+
+
+def load_managers_config(google_client, log_sheet_id, worksheet_name="MANAGERS"):
+    """Зчитує список менеджерів і проєктів з технічного аркуша."""
+    worksheet = google_client.open_by_key(log_sheet_id).worksheet(worksheet_name)
+    rows = worksheet.get_all_records()
+
+    managers = []
+    for row in rows:
+        manager_name = str(row.get("MANAGERS_NAME", "")).strip()
+        project_name = str(row.get("PROJECT", "")).strip()
+        sheet_id = extract_sheet_id(row.get("SHEET_ID", ""))
+
+        if not manager_name or not project_name or not sheet_id:
+            continue
+
+        managers.append({
+            "manager_name": manager_name,
+            "project": project_name,
+            "sheet_id": sheet_id
+        })
+
+    return managers
 
 
 # 🔹 Маппінг критеріїв (де і як вносяться оцінки)
