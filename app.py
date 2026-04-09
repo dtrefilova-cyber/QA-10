@@ -46,6 +46,13 @@ qa_managers_list = [
     "Дар'я", "Надя", "Настя", "Владимира", "Діана", "Руслана", "Олексій"
 ]
 
+call_completion_statuses = [
+    "⚪ (відсутній статус)",
+    "🟢 (слухавку поклав клієнт)",
+    "🟡 (технічні проблеми, зв'язок обірвався)",
+    "🔴 (слухавку поклав менеджер)",
+]
+
 def get_managers_config():
     google_client = connect_google()
     return load_managers_config(google_client, LOG_SHEET_ID)
@@ -126,11 +133,19 @@ for row in range(5):
                 ["правильно нараховано", "помилково нараховано", "не потрібно"],
                 key=f"bonus_{idx}"
             )
-            repeat_call = st.selectbox(
-                "Передзвон",
-                ["так, був протягом години", "так, був протягом 2 годин", "ні, не було"],
-                key=f"repeat_{idx}"
-            )
+            repeat_col, completion_col = st.columns(2)
+            with repeat_col:
+                repeat_call = st.selectbox(
+                    "Передзвон",
+                    ["так, був протягом години", "так, був протягом 2 годин", "ні, не було"],
+                    key=f"repeat_{idx}"
+                )
+            with completion_col:
+                call_completion_status = st.selectbox(
+                    "Завершення виклику",
+                    call_completion_statuses,
+                    key=f"call_completion_{idx}"
+                )
             manager_comment = st.text_area("Коментар", key=f"comment_{idx}")
 
             calls.append({
@@ -144,6 +159,7 @@ for row in range(5):
                 "check_date": check_date.strftime("%d-%m-%Y"),
                 "bonus_check": bonus_check,
                 "repeat_call": repeat_call,
+                "call_completion_status": call_completion_status,
                 "manager_comment": manager_comment,
             })
 
@@ -440,17 +456,17 @@ def build_combined_analysis_prompt(prompt_body, raw_dialogue, replacements):
 {prompt_body}
 
 ---------------------
-СЛОВНИК ЗАМІН
+РЎР›РћР’РќРРљ Р—РђРњР†Рќ
 ---------------------
 
-Словник замін є ОБОВ'ЯЗКОВИМ.
+РЎР»РѕРІРЅРёРє Р·Р°РјС–РЅ С” РћР‘РћР’'РЇР—РљРћР’РРњ.
 Якщо слово або фраза є у словнику, використовуй тільки варіант зі словника.
 Не вигадуй власних варіантів, якщо слово є у словнику.
 
 {dictionary_context}
 
 ---------------------
-ОЧИСТКА ТРАНСКРИПТУ
+РћР§РРЎРўРљРђ РўР РђРќРЎРљР РРџРўРЈ
 ---------------------
 
 Спочатку очисти транскрипт:
@@ -467,7 +483,7 @@ def build_combined_analysis_prompt(prompt_body, raw_dialogue, replacements):
 
 {get_analysis_output_schema()}
 
-СИРИЙ ТРАНСКРИПТ:
+РЎРР РР™ РўР РђРќРЎРљР РРџРў:
 {raw_dialogue}
 """
 
