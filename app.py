@@ -46,6 +46,30 @@ qa_managers_list = [
     "Дар'я", "Надя", "Настя", "Владимира", "Діана", "Руслана", "Олексій"
 ]
 
+FORBIDDEN_PROFESSIONALISM_PHRASES = [
+    "Лотерея",
+    "Акція",
+    "Розіграш",
+    "Реклама",
+    "Подарунок",
+    "Популяризація",
+    "Лотерейний білет",
+    "Даруємо",
+    "Розігруємо",
+    "Конкурс",
+    "Кешбек",
+    "Відшкодуємо",
+    "Компенсація",
+    "Повернення",
+    "Фріспіни",
+    "Безкоштовно",
+    "Страхування",
+    "страховка",
+    "ставка без ризику",
+    "фрібет",
+    "Бездеп",
+]
+
 call_completion_statuses = [
     "⚪ (відсутній статус)",
     "🟢 (слухавку поклав клієнт)",
@@ -396,6 +420,12 @@ def apply_defaults(features):
 
         "presentation_level": "none",
         "speech_quality": "bad",
+        "forbidden_words_used": False,
+        "forbidden_words_detected": [],
+        "conversation_logically_completed": False,
+        "client_negative": False,
+        "client_used_profanity": False,
+        "manager_hung_up_before_client_finished": False,
 
         "assumption_made": False,
 
@@ -444,7 +474,13 @@ def get_analysis_output_schema():
     "assumption_made": boolean,
     "comment_match_level": "none" | "partial" | "full",
     "comment_complete": boolean,
-    "speech_quality": "bad" | "good"
+    "speech_quality": "bad" | "good",
+    "forbidden_words_used": boolean,
+    "forbidden_words_detected": ["рядок 1", "рядок 2"],
+    "conversation_logically_completed": boolean,
+    "client_negative": boolean,
+    "client_used_profanity": boolean,
+    "manager_hung_up_before_client_finished": boolean
   }
 }
 """
@@ -452,6 +488,7 @@ def get_analysis_output_schema():
 
 def build_combined_analysis_prompt(prompt_body, raw_dialogue, replacements):
     dictionary_context = build_dictionary_context(replacements)
+    forbidden_words_list = ", ".join(FORBIDDEN_PROFESSIONALISM_PHRASES)
     return f"""
 {prompt_body}
 
@@ -480,6 +517,19 @@ def build_combined_analysis_prompt(prompt_body, raw_dialogue, replacements):
 - проаналізуй вже очищений транскрипт
 - сформуй готовий qa_comment у тому ж запиті
 - qa_comment має бути українською, по одному критерію на рядок
+- для критерію "Професіоналізм" перевір лише репліки менеджера
+- якщо менеджер вжив хоча б одне заборонене слово або фразу, поверни "forbidden_words_used": true
+- у "forbidden_words_detected" поверни точні слова або фрази, які вжив менеджер
+- якщо "forbidden_words_used": true, критерій "Професіоналізм" має оцінюватися в 0 балів
+- якщо "forbidden_words_used": true, у qa_comment ОБОВ'ЯЗКОВО додай окремий рядок про критерій "Професіоналізм" і вкажи конкретне заборонене слово або фразу
+- додатково визнач:
+  "conversation_logically_completed" = true, якщо розмова по суті завершена
+  "client_negative" = true, якщо клієнт проявляє негатив
+  "client_used_profanity" = true, якщо клієнт використовує нецензурну лексику
+  "manager_hung_up_before_client_finished" = true, якщо менеджер не дослухав клієнта і сам завершив незавершену розмову
+
+Заборонені слова і фрази для критерію "Професіоналізм":
+{forbidden_words_list}
 
 {get_analysis_output_schema()}
 
@@ -655,9 +705,12 @@ def score_call(f, meta, dialogue=None):
         s["Якість мовлення"] = 0
 
     # ---------------- Професіоналізм ----------------
-    s["Професіоналізм"] = (
-        5 if meta["bonus_check"] == "помилково нараховано" else 10
-    )
+    if f.get("forbidden_words_used"):
+        s["Професіоналізм"] = 0
+    else:
+        s["Професіоналізм"] = (
+            5 if meta["bonus_check"] == "помилково нараховано" else 10
+        )
 
     # ---------------- Картка ----------------
     match = f.get("comment_match_level", "none")
@@ -700,7 +753,7 @@ def score_call(f, meta, dialogue=None):
             else 0
         )
 
-    return s
+    return apply_call_completion_rules(s, f, meta)
 
 
 def format_comment_for_sheet(comment):
@@ -709,6 +762,96 @@ def format_comment_for_sheet(comment):
 
     lines = [line.strip() for line in str(comment).splitlines() if line.strip()]
     return " | ".join(lines)
+
+
+def ensure_forbidden_words_comment(comment, features):
+    if not features.get("forbidden_words_used"):
+        return comment
+
+    detected = [
+        str(item).strip()
+        for item in features.get("forbidden_words_detected", [])
+        if str(item).strip()
+    ]
+    if not detected:
+        detected = ["заборонене формулювання"]
+
+    comment_text = (comment or "").strip()
+    lowered = comment_text.lower()
+    has_professionalism_line = "професіонал" in lowered
+    mentions_detected = any(item.lower() in lowered for item in detected)
+
+    if has_professionalism_line and mentions_detected:
+        return comment_text
+
+    forbidden_line = (
+        "Професіоналізм: 0 - менеджер використав заборонені слова/фрази: "
+        f"{', '.join(detected)}."
+    )
+
+    if not comment_text:
+        return forbidden_line
+
+    return f"{comment_text}\n{forbidden_line}"
+
+
+def apply_call_completion_rules(scores, features, meta):
+    status = meta.get("call_completion_status", "")
+    immediate_repeat = meta.get("repeat_call") == "так, був протягом години"
+    has_any_repeat = meta.get("repeat_call") in {
+        "так, був протягом години",
+        "так, був протягом 2 годин",
+    }
+    logical_completion = bool(features.get("conversation_logically_completed"))
+    has_farewell = bool(features.get("has_farewell"))
+    bonus_offered = bool(features.get("bonus_offered"))
+    has_followup = features.get("followup_type", "none") != "none"
+    client_negative = bool(features.get("client_negative"))
+    client_used_profanity = bool(features.get("client_used_profanity"))
+    manager_hung_up_early = bool(features.get("manager_hung_up_before_client_finished"))
+
+    if logical_completion and has_farewell:
+        return scores
+
+    if status == "🟢 (слухавку поклав клієнт)":
+        if (
+            not logical_completion
+            and not has_farewell
+            and bonus_offered
+            and has_followup
+            and immediate_repeat
+        ):
+            return scores
+
+        if client_negative and not client_used_profanity:
+            if not immediate_repeat:
+                scores["Передзвон клієнту"] = 0
+            return scores
+
+        if client_negative and client_used_profanity and not immediate_repeat:
+            return scores
+
+        if (
+            not logical_completion
+            and not has_farewell
+            and not bonus_offered
+            and not has_followup
+            and not immediate_repeat
+        ):
+            scores["Утримання клієнта"] = 0
+            return scores
+
+    if status == "🔴 (слухавку поклав менеджер)":
+        if manager_hung_up_early or client_negative:
+            scores["Утримання клієнта"] = 0
+            return scores
+
+    if status == "🟡 (технічні проблеми, зв'язок обірвався)":
+        if not logical_completion and not has_any_repeat:
+            scores["Передзвон клієнту"] = 0
+            return scores
+
+    return scores
 
 # ================= RUN =================
 if "results" not in st.session_state:
@@ -787,6 +930,7 @@ if run_openai or run_claude:
             scores = score_call(features, call, clean_dialogue)
             if not comment:
                 comment = "Помилка генерації коментаря"
+            comment = ensure_forbidden_words_comment(comment, features)
             comment_for_sheet = format_comment_for_sheet(comment)
             ai_label = "OpenAI" if run_openai else "Claude"
 
