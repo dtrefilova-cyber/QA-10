@@ -35,15 +35,22 @@ KB_SHEET_ID = "1yZbtao1P1Xa0r6ZJAnjkJWikxcWQ90XbXvaT7EWQKeU"
 # ================= HEADER =================
 st.markdown("""
 <div class="card">
-    <h2 style="margin:0;">🎧 QA-10</h2>
-    <span style="color:#aaa;">Аналіз дзвінків</span>
+    <h2 style="margin:0;">рџЋ§ QA-10</h2>
+    <span style="color:#aaa;">РђРЅР°Р»С–Р· РґР·РІС–РЅРєС–РІ</span>
 </div>
 """, unsafe_allow_html=True)
 
-check_date = st.date_input("Дата перевірки", datetime.today())
+check_date = st.date_input("Р”Р°С‚Р° РїРµСЂРµРІС–СЂРєРё", datetime.today())
 
 qa_managers_list = [
-    "Дар'я", "Надя", "Настя", "Владимира", "Діана", "Руслана", "Олексій"
+    "Р”Р°СЂ'СЏ", "РќР°РґСЏ", "РќР°СЃС‚СЏ", "Р’Р»Р°РґРёРјРёСЂР°", "Р”С–Р°РЅР°", "Р СѓСЃР»Р°РЅР°", "РћР»РµРєСЃС–Р№"
+]
+
+call_completion_statuses = [
+    "вљЄ (РІС–РґСЃСѓС‚РЅС–Р№ СЃС‚Р°С‚СѓСЃ)",
+    "рџџў (СЃР»СѓС…Р°РІРєСѓ РїРѕРєР»Р°РІ РєР»С–С”РЅС‚)",
+    "рџџЎ (С‚РµС…РЅС–С‡РЅС– РїСЂРѕР±Р»РµРјРё, Р·РІ'СЏР·РѕРє РѕР±С–СЂРІР°РІСЃСЏ)",
+    "рџ”ґ (СЃР»СѓС…Р°РІРєСѓ РїРѕРєР»Р°РІ РјРµРЅРµРґР¶РµСЂ)",
 ]
 
 def get_managers_config():
@@ -69,18 +76,18 @@ try:
     }
 except Exception as e:
     managers_config = []
-    st.error(f"Помилка завантаження менеджерів: {e}")
+    st.error(f"РџРѕРјРёР»РєР° Р·Р°РІР°РЅС‚Р°Р¶РµРЅРЅСЏ РјРµРЅРµРґР¶РµСЂС–РІ: {e}")
 
 projects_list = sorted({item["project"] for item in managers_config})
 
 if not managers_config:
     st.warning(
-        "Список проєктів і менеджерів не завантажився з аркуша MANAGERS. "
-        "Перевірте, що в аркуші є заголовки MANAGERS_NAME, PROJECT, SHEET_ID "
-        "і що в колонці SHEET_ID заповнені значення."
+        "РЎРїРёСЃРѕРє РїСЂРѕС”РєС‚С–РІ С– РјРµРЅРµРґР¶РµСЂС–РІ РЅРµ Р·Р°РІР°РЅС‚Р°Р¶РёРІСЃСЏ Р· Р°СЂРєСѓС€Р° MANAGERS. "
+        "РџРµСЂРµРІС–СЂС‚Рµ, С‰Рѕ РІ Р°СЂРєСѓС€С– С” Р·Р°РіРѕР»РѕРІРєРё MANAGERS_NAME, PROJECT, SHEET_ID "
+        "С– С‰Рѕ РІ РєРѕР»РѕРЅС†С– SHEET_ID Р·Р°РїРѕРІРЅРµРЅС– Р·РЅР°С‡РµРЅРЅСЏ."
     )
     st.caption(
-        f"Діагностика: headers={managers_meta['headers']}, "
+        f"Р”С–Р°РіРЅРѕСЃС‚РёРєР°: headers={managers_meta['headers']}, "
         f"header_row={managers_meta['header_row_index']}, "
         f"raw_rows={managers_meta['raw_rows_count']}, "
         f"valid_rows={managers_meta['valid_rows_count']}"
@@ -91,14 +98,14 @@ calls = []
 for row in range(5):
     col1, col2 = st.columns(2)
     for col, idx in zip([col1, col2], [row * 2 + 1, row * 2 + 2]):
-        with col.expander(f"📞 Дзвінок {idx}"):
-            audio_url = st.text_input("Посилання", key=f"url_{idx}")
+        with col.expander(f"рџ“ћ Р”Р·РІС–РЅРѕРє {idx}"):
+            audio_url = st.text_input("РџРѕСЃРёР»Р°РЅРЅСЏ", key=f"url_{idx}")
             qa_manager = st.selectbox("QA", qa_managers_list, key=f"qa_{idx}")
             selected_project = st.selectbox(
-                "Проєкт",
+                "РџСЂРѕС”РєС‚",
                 projects_list,
                 index=None,
-                placeholder="Оберіть проєкт",
+                placeholder="РћР±РµСЂС–С‚СЊ РїСЂРѕС”РєС‚",
                 key=f"project_{idx}",
                 disabled=not projects_list
             )
@@ -108,10 +115,10 @@ for row in range(5):
             ]
             manager_names = [item["manager_name"] for item in project_managers]
             selected_manager = st.selectbox(
-                "Менеджер РЕТ",
+                "РњРµРЅРµРґР¶РµСЂ Р Р•Рў",
                 manager_names,
                 index=None,
-                placeholder="Оберіть менеджера",
+                placeholder="РћР±РµСЂС–С‚СЊ РјРµРЅРµРґР¶РµСЂР°",
                 key=f"ret_{idx}",
                 disabled=not manager_names
             )
@@ -120,18 +127,26 @@ for row in range(5):
                 None
             )
             client_id = st.text_input("ID", key=f"client_{idx}")
-            call_date = st.text_input("Дата", key=f"date_{idx}")
+            call_date = st.text_input("Р”Р°С‚Р°", key=f"date_{idx}")
             bonus_check = st.selectbox(
-                "Бонус",
-                ["правильно нараховано", "помилково нараховано", "не потрібно"],
+                "Р‘РѕРЅСѓСЃ",
+                ["РїСЂР°РІРёР»СЊРЅРѕ РЅР°СЂР°С…РѕРІР°РЅРѕ", "РїРѕРјРёР»РєРѕРІРѕ РЅР°СЂР°С…РѕРІР°РЅРѕ", "РЅРµ РїРѕС‚СЂС–Р±РЅРѕ"],
                 key=f"bonus_{idx}"
             )
-            repeat_call = st.selectbox(
-                "Передзвон",
-                ["так, був протягом години", "так, був протягом 2 годин", "ні, не було"],
-                key=f"repeat_{idx}"
-            )
-            manager_comment = st.text_area("Коментар", key=f"comment_{idx}")
+            repeat_col, completion_col = st.columns(2)
+            with repeat_col:
+                repeat_call = st.selectbox(
+                    "РџРµСЂРµРґР·РІРѕРЅ",
+                    ["С‚Р°Рє, Р±СѓРІ РїСЂРѕС‚СЏРіРѕРј РіРѕРґРёРЅРё", "С‚Р°Рє, Р±СѓРІ РїСЂРѕС‚СЏРіРѕРј 2 РіРѕРґРёРЅ", "РЅС–, РЅРµ Р±СѓР»Рѕ"],
+                    key=f"repeat_{idx}"
+                )
+            with completion_col:
+                call_completion_status = st.selectbox(
+                    "Завершення виклику",
+                    call_completion_statuses,
+                    key=f"call_completion_{idx}"
+                )
+            manager_comment = st.text_area("РљРѕРјРµРЅС‚Р°СЂ", key=f"comment_{idx}")
 
             calls.append({
                 "url": audio_url.strip(),
@@ -144,6 +159,7 @@ for row in range(5):
                 "check_date": check_date.strftime("%d-%m-%Y"),
                 "bonus_check": bonus_check,
                 "repeat_call": repeat_call,
+                "call_completion_status": call_completion_status,
                 "manager_comment": manager_comment,
             })
 
@@ -205,7 +221,7 @@ def transcribe_audio_cached(url):
                 })
 
         if not all_words:
-            return {"ok": False, "error": "Немає транскрипції", "transcript": None}
+            return {"ok": False, "error": "РќРµРјР°С” С‚СЂР°РЅСЃРєСЂРёРїС†С–С—", "transcript": None}
 
         all_words.sort(key=lambda x: x["start"])
 
@@ -318,11 +334,11 @@ def build_kb_context(kb_data):
         if not name:
             continue
 
-        parts = [f"Продукт: {name}"]
+        parts = [f"РџСЂРѕРґСѓРєС‚: {name}"]
         if aliases:
-            parts.append(f"Аліаси: {aliases}")
+            parts.append(f"РђР»С–Р°СЃРё: {aliases}")
         if description:
-            parts.append(f"Опис: {description}")
+            parts.append(f"РћРїРёСЃ: {description}")
 
         lines.append(" | ".join(parts))
 
@@ -341,14 +357,14 @@ def is_autoresponder(dialogue: str) -> bool:
     text = dialogue.lower()
 
     triggers = [
-        "залиште повідомлення",
-        "після сигналу",
-        "абонент недоступний",
-        "не може відповісти",
+        "Р·Р°Р»РёС€С‚Рµ РїРѕРІС–РґРѕРјР»РµРЅРЅСЏ",
+        "РїС–СЃР»СЏ СЃРёРіРЅР°Р»Сѓ",
+        "Р°Р±РѕРЅРµРЅС‚ РЅРµРґРѕСЃС‚СѓРїРЅРёР№",
+        "РЅРµ РјРѕР¶Рµ РІС–РґРїРѕРІС–СЃС‚Рё",
         "voice mail",
         "voicemail",
         "please leave a message",
-        "номер не обслуговується"
+        "РЅРѕРјРµСЂ РЅРµ РѕР±СЃР»СѓРіРѕРІСѓС”С‚СЊСЃСЏ"
     ]
 
     return any(t in text for t in triggers)
@@ -395,17 +411,17 @@ def apply_defaults(features):
 
 def build_dictionary_context(replacements):
     if not replacements:
-        return "Словник замін не переданий."
+        return "РЎР»РѕРІРЅРёРє Р·Р°РјС–РЅ РЅРµ РїРµСЂРµРґР°РЅРёР№."
 
-    return "\n".join([f"{k} → {v}" for k, v in replacements.items()])
+    return "\n".join([f"{k} в†’ {v}" for k, v in replacements.items()])
 
 
 def get_analysis_output_schema():
     return """
-Поверни ONLY valid JSON такого формату:
+РџРѕРІРµСЂРЅРё ONLY valid JSON С‚Р°РєРѕРіРѕ С„РѕСЂРјР°С‚Сѓ:
 {
-  "cleaned_transcript": "очищений діалог",
-  "qa_comment": "готовий QA-коментар по критеріях, кожен критерій з нового рядка",
+  "cleaned_transcript": "РѕС‡РёС‰РµРЅРёР№ РґС–Р°Р»РѕРі",
+  "qa_comment": "РіРѕС‚РѕРІРёР№ QA-РєРѕРјРµРЅС‚Р°СЂ РїРѕ РєСЂРёС‚РµСЂС–СЏС…, РєРѕР¶РµРЅ РєСЂРёС‚РµСЂС–Р№ Р· РЅРѕРІРѕРіРѕ СЂСЏРґРєР°",
   "features": {
     "manager_name_present": boolean,
     "manager_position_present": boolean,
@@ -440,34 +456,34 @@ def build_combined_analysis_prompt(prompt_body, raw_dialogue, replacements):
 {prompt_body}
 
 ---------------------
-СЛОВНИК ЗАМІН
+РЎР›РћР’РќРРљ Р—РђРњР†Рќ
 ---------------------
 
-Словник замін є ОБОВ'ЯЗКОВИМ.
-Якщо слово або фраза є у словнику, використовуй тільки варіант зі словника.
-Не вигадуй власних варіантів, якщо слово є у словнику.
+РЎР»РѕРІРЅРёРє Р·Р°РјС–РЅ С” РћР‘РћР’'РЇР—РљРћР’РРњ.
+РЇРєС‰Рѕ СЃР»РѕРІРѕ Р°Р±Рѕ С„СЂР°Р·Р° С” Сѓ СЃР»РѕРІРЅРёРєСѓ, РІРёРєРѕСЂРёСЃС‚РѕРІСѓР№ С‚С–Р»СЊРєРё РІР°СЂС–Р°РЅС‚ Р·С– СЃР»РѕРІРЅРёРєР°.
+РќРµ РІРёРіР°РґСѓР№ РІР»Р°СЃРЅРёС… РІР°СЂС–Р°РЅС‚С–РІ, СЏРєС‰Рѕ СЃР»РѕРІРѕ С” Сѓ СЃР»РѕРІРЅРёРєСѓ.
 
 {dictionary_context}
 
 ---------------------
-ОЧИСТКА ТРАНСКРИПТУ
+РћР§РРЎРўРљРђ РўР РђРќРЎРљР РРџРўРЈ
 ---------------------
 
-Спочатку очисти транскрипт:
-- виправ помилки розпізнавання
-- застосуй словник замін
-- не змінюй сенс
-- не скорочуй текст
-- заміни ch_0 на "Менеджер", ch_1 на "Клієнт"
+РЎРїРѕС‡Р°С‚РєСѓ РѕС‡РёСЃС‚Рё С‚СЂР°РЅСЃРєСЂРёРїС‚:
+- РІРёРїСЂР°РІ РїРѕРјРёР»РєРё СЂРѕР·РїС–Р·РЅР°РІР°РЅРЅСЏ
+- Р·Р°СЃС‚РѕСЃСѓР№ СЃР»РѕРІРЅРёРє Р·Р°РјС–РЅ
+- РЅРµ Р·РјС–РЅСЋР№ СЃРµРЅСЃ
+- РЅРµ СЃРєРѕСЂРѕС‡СѓР№ С‚РµРєСЃС‚
+- Р·Р°РјС–РЅРё ch_0 РЅР° "РњРµРЅРµРґР¶РµСЂ", ch_1 РЅР° "РљР»С–С”РЅС‚"
 
-Після цього:
-- проаналізуй вже очищений транскрипт
-- сформуй готовий qa_comment у тому ж запиті
-- qa_comment має бути українською, по одному критерію на рядок
+РџС–СЃР»СЏ С†СЊРѕРіРѕ:
+- РїСЂРѕР°РЅР°Р»С–Р·СѓР№ РІР¶Рµ РѕС‡РёС‰РµРЅРёР№ С‚СЂР°РЅСЃРєСЂРёРїС‚
+- СЃС„РѕСЂРјСѓР№ РіРѕС‚РѕРІРёР№ qa_comment Сѓ С‚РѕРјСѓ Р¶ Р·Р°РїРёС‚С–
+- qa_comment РјР°С” Р±СѓС‚Рё СѓРєСЂР°С—РЅСЃСЊРєРѕСЋ, РїРѕ РѕРґРЅРѕРјСѓ РєСЂРёС‚РµСЂС–СЋ РЅР° СЂСЏРґРѕРє
 
 {get_analysis_output_schema()}
 
-СИРИЙ ТРАНСКРИПТ:
+РЎРР РР™ РўР РђРќРЎРљР РРџРў:
 {raw_dialogue}
 """
 
@@ -546,24 +562,24 @@ def extract_features_claude(dialogue, comment, kb_context="", replacements=None)
 def score_call(f, meta, dialogue=None):
     s = {}
 
-    # якщо автовідповідач → всі 0
+    # СЏРєС‰Рѕ Р°РІС‚РѕРІС–РґРїРѕРІС–РґР°С‡ в†’ РІСЃС– 0
     if dialogue and is_autoresponder(dialogue):
         return {
-            "Встановлення контакту": 0,
-            "Спроба презентації": 0,
-            "Домовленість про наступний контакт": 0,
-            "Пропозиція бонусу": 0,
-            "Завершення розмови": 0,
-            "Передзвон клієнту": 0,
-            "Не додумувати": 0,
-            "Якість мовлення": 0,
-            "Професіоналізм": 0,
-            "Оформлення картки": 0,
-            "Утримання клієнта": 0,
-            "Робота із запереченнями": 0
+            "Р’СЃС‚Р°РЅРѕРІР»РµРЅРЅСЏ РєРѕРЅС‚Р°РєС‚Сѓ": 0,
+            "РЎРїСЂРѕР±Р° РїСЂРµР·РµРЅС‚Р°С†С–С—": 0,
+            "Р”РѕРјРѕРІР»РµРЅС–СЃС‚СЊ РїСЂРѕ РЅР°СЃС‚СѓРїРЅРёР№ РєРѕРЅС‚Р°РєС‚": 0,
+            "РџСЂРѕРїРѕР·РёС†С–СЏ Р±РѕРЅСѓСЃСѓ": 0,
+            "Р—Р°РІРµСЂС€РµРЅРЅСЏ СЂРѕР·РјРѕРІРё": 0,
+            "РџРµСЂРµРґР·РІРѕРЅ РєР»С–С”РЅС‚Сѓ": 0,
+            "РќРµ РґРѕРґСѓРјСѓРІР°С‚Рё": 0,
+            "РЇРєС–СЃС‚СЊ РјРѕРІР»РµРЅРЅСЏ": 0,
+            "РџСЂРѕС„РµСЃС–РѕРЅР°Р»С–Р·Рј": 0,
+            "РћС„РѕСЂРјР»РµРЅРЅСЏ РєР°СЂС‚РєРё": 0,
+            "РЈС‚СЂРёРјР°РЅРЅСЏ РєР»С–С”РЅС‚Р°": 0,
+            "Р РѕР±РѕС‚Р° С–Р· Р·Р°РїРµСЂРµС‡РµРЅРЅСЏРјРё": 0
         }
 
-    # ---------------- Контакт ----------------
+    # ---------------- РљРѕРЅС‚Р°РєС‚ ----------------
     elements = sum([
     f["manager_name_present"],
     f["manager_position_present"],
@@ -573,100 +589,100 @@ def score_call(f, meta, dialogue=None):
     f.get("friendly_question", False)
 ])
 
-    s["Встановлення контакту"] = (
+    s["Р’СЃС‚Р°РЅРѕРІР»РµРЅРЅСЏ РєРѕРЅС‚Р°РєС‚Сѓ"] = (
         7.5 if elements >= 4 else
         5 if elements == 3 else
         2.5 if elements == 2 else
         0
     )
 
-    # ---------------- Спроба презентації ----------------
+    # ---------------- РЎРїСЂРѕР±Р° РїСЂРµР·РµРЅС‚Р°С†С–С— ----------------
     level = f.get("presentation_level", "none")
 
     if level == "full":
-        s["Спроба презентації"] = 5
+        s["РЎРїСЂРѕР±Р° РїСЂРµР·РµРЅС‚Р°С†С–С—"] = 5
     elif level == "partial":
-        s["Спроба презентації"] = 2.5
+        s["РЎРїСЂРѕР±Р° РїСЂРµР·РµРЅС‚Р°С†С–С—"] = 2.5
     else:
-        s["Спроба презентації"] = 0
+        s["РЎРїСЂРѕР±Р° РїСЂРµР·РµРЅС‚Р°С†С–С—"] = 0
 
-    # ---------------- Домовленість ----------------
+    # ---------------- Р”РѕРјРѕРІР»РµРЅС–СЃС‚СЊ ----------------
     fup = f.get("followup_type", "none")
-    s["Домовленість про наступний контакт"] = (
+    s["Р”РѕРјРѕРІР»РµРЅС–СЃС‚СЊ РїСЂРѕ РЅР°СЃС‚СѓРїРЅРёР№ РєРѕРЅС‚Р°РєС‚"] = (
         5 if fup == "exact_time"
         else 2.5 if fup == "offer"
         else 0
     )
 
-    # ---------------- Бонус ----------------
+    # ---------------- Р‘РѕРЅСѓСЃ ----------------
     if not f.get("bonus_offered"):
-        s["Пропозиція бонусу"] = 0
+        s["РџСЂРѕРїРѕР·РёС†С–СЏ Р±РѕРЅСѓСЃСѓ"] = 0
     else:
         bonus_conditions = sum([
             bool(f.get("bonus_has_type")),
             bool(f.get("bonus_has_duration")),
             bool(f.get("bonus_has_value"))
         ])
-        s["Пропозиція бонусу"] = 10 if bonus_conditions >= 2 else 5
+        s["РџСЂРѕРїРѕР·РёС†С–СЏ Р±РѕРЅСѓСЃСѓ"] = 10 if bonus_conditions >= 2 else 5
 
-    # ---------------- Завершення ----------------
-    s["Завершення розмови"] = 5 if f.get("has_farewell") else 0
+    # ---------------- Р—Р°РІРµСЂС€РµРЅРЅСЏ ----------------
+    s["Р—Р°РІРµСЂС€РµРЅРЅСЏ СЂРѕР·РјРѕРІРё"] = 5 if f.get("has_farewell") else 0
 
-    # ---------------- Передзвон ----------------
+    # ---------------- РџРµСЂРµРґР·РІРѕРЅ ----------------
     repeat = meta["repeat_call"]
     
     if fup in ["none", "offer", "exact_time"]:
-        s["Передзвон клієнту"] = 15
+        s["РџРµСЂРµРґР·РІРѕРЅ РєР»С–С”РЅС‚Сѓ"] = 15
     else:
-        s["Передзвон клієнту"] = (
-            15 if repeat == "так, був протягом години"
-            else 10 if repeat == "так, був протягом 2 годин"
+        s["РџРµСЂРµРґР·РІРѕРЅ РєР»С–С”РЅС‚Сѓ"] = (
+            15 if repeat == "С‚Р°Рє, Р±СѓРІ РїСЂРѕС‚СЏРіРѕРј РіРѕРґРёРЅРё"
+            else 10 if repeat == "С‚Р°Рє, Р±СѓРІ РїСЂРѕС‚СЏРіРѕРј 2 РіРѕРґРёРЅ"
             else 0
         )
 
-    # ---------------- Не додумувати ----------------
+    # ---------------- РќРµ РґРѕРґСѓРјСѓРІР°С‚Рё ----------------
     if f.get("assumption_made"):
-        s["Не додумувати"] = 2.5
+        s["РќРµ РґРѕРґСѓРјСѓРІР°С‚Рё"] = 2.5
     else:
-        s["Не додумувати"] = 5
+        s["РќРµ РґРѕРґСѓРјСѓРІР°С‚Рё"] = 5
 
-    # ---------------- Якість мовлення ----------------
+    # ---------------- РЇРєС–СЃС‚СЊ РјРѕРІР»РµРЅРЅСЏ ----------------
     quality = f.get("speech_quality", "bad")
 
     if quality == "good":
-        s["Якість мовлення"] = 2.5
+        s["РЇРєС–СЃС‚СЊ РјРѕРІР»РµРЅРЅСЏ"] = 2.5
     else:
-        s["Якість мовлення"] = 0
+        s["РЇРєС–СЃС‚СЊ РјРѕРІР»РµРЅРЅСЏ"] = 0
 
-    # ---------------- Професіоналізм ----------------
-    s["Професіоналізм"] = (
-        5 if meta["bonus_check"] == "помилково нараховано" else 10
+    # ---------------- РџСЂРѕС„РµСЃС–РѕРЅР°Р»С–Р·Рј ----------------
+    s["РџСЂРѕС„РµСЃС–РѕРЅР°Р»С–Р·Рј"] = (
+        5 if meta["bonus_check"] == "РїРѕРјРёР»РєРѕРІРѕ РЅР°СЂР°С…РѕРІР°РЅРѕ" else 10
     )
 
-    # ---------------- Картка ----------------
+    # ---------------- РљР°СЂС‚РєР° ----------------
     match = f.get("comment_match_level", "none")
     complete = f.get("comment_complete", False)
 
     if match == "none":
-        s["Оформлення картки"] = 0
+        s["РћС„РѕСЂРјР»РµРЅРЅСЏ РєР°СЂС‚РєРё"] = 0
     elif not complete:
-        s["Оформлення картки"] = 2.5
+        s["РћС„РѕСЂРјР»РµРЅРЅСЏ РєР°СЂС‚РєРё"] = 2.5
     else:
-        s["Оформлення картки"] = 5
+        s["РћС„РѕСЂРјР»РµРЅРЅСЏ РєР°СЂС‚РєРё"] = 5
 
-    # ---------------- Утримання ----------------
+    # ---------------- РЈС‚СЂРёРјР°РЅРЅСЏ ----------------
     lvl = f.get("continuation_level", "none")
 
     if not f.get("client_wants_to_end"):
         behavior = f.get("continuation_behavior", "neutral")
-        s["Утримання клієнта"] = (
+        s["РЈС‚СЂРёРјР°РЅРЅСЏ РєР»С–С”РЅС‚Р°"] = (
             20 if behavior == "active"
             else 15 if behavior == "neutral"
             else 10 if behavior == "passive"
             else 0
         )
     else:
-        s["Утримання клієнта"] = (
+        s["РЈС‚СЂРёРјР°РЅРЅСЏ РєР»С–С”РЅС‚Р°"] = (
             20 if lvl == "strong"
             else 15 if lvl == "weak"
             else 10 if lvl == "formal"
@@ -674,11 +690,11 @@ def score_call(f, meta, dialogue=None):
             else 0
         )
 
-    # ---------------- Заперечення ----------------
+    # ---------------- Р—Р°РїРµСЂРµС‡РµРЅРЅСЏ ----------------
     if not f.get("objection_detected"):
-        s["Робота із запереченнями"] = 10
+        s["Р РѕР±РѕС‚Р° С–Р· Р·Р°РїРµСЂРµС‡РµРЅРЅСЏРјРё"] = 10
     else:
-        s["Робота із запереченнями"] = (
+        s["Р РѕР±РѕС‚Р° С–Р· Р·Р°РїРµСЂРµС‡РµРЅРЅСЏРјРё"] = (
             10 if lvl == "strong"
             else 5 if lvl == "weak"
             else 0
@@ -699,8 +715,8 @@ if "results" not in st.session_state:
     st.session_state["results"] = []
 
 col1, col2 = st.columns(2)
-run_openai = col1.button("🚀 OpenAI", type="primary")
-run_claude = col2.button("🧠 Claude")
+run_openai = col1.button("рџљЂ OpenAI", type="primary")
+run_claude = col2.button("рџ§  Claude")
 
 if run_openai or run_claude:
     st.session_state["results"].clear()
@@ -726,11 +742,11 @@ if run_openai or run_claude:
         if not call["url"]:
             continue
 
-        with st.spinner(f"Аналіз дзвінка {i+1}..."):
+        with st.spinner(f"РђРЅР°Р»С–Р· РґР·РІС–РЅРєР° {i+1}..."):
 
             transcript = transcribe_audio(call["url"])
             if not transcript:
-                st.warning("Немає транскрипції")
+                st.warning("РќРµРјР°С” С‚СЂР°РЅСЃРєСЂРёРїС†С–С—")
                 continue
 
             transcript = apply_replacements(transcript, replacements)
@@ -751,7 +767,7 @@ if run_openai or run_claude:
                 )
 
             if not analysis_result:
-                st.warning("Помилка аналізу")
+                st.warning("РџРѕРјРёР»РєР° Р°РЅР°Р»С–Р·Сѓ")
                 continue
 
             clean_dialogue = analysis_result.get("cleaned_transcript") or transcript
@@ -760,17 +776,17 @@ if run_openai or run_claude:
             comment = analysis_result.get("qa_comment", "").strip()
             presentation_detected = detect_presentation(clean_dialogue, kb_data)
 
-            # фільтр через базу знань
+            # С„С–Р»СЊС‚СЂ С‡РµСЂРµР· Р±Р°Р·Сѓ Р·РЅР°РЅСЊ
             if not presentation_detected:
                 features["presentation_level"] = "none"
 
             if not features:
-                st.warning("Помилка аналізу")
+                st.warning("РџРѕРјРёР»РєР° Р°РЅР°Р»С–Р·Сѓ")
                 continue
 
             scores = score_call(features, call, clean_dialogue)
             if not comment:
-                comment = "Помилка генерації коментаря"
+                comment = "РџРѕРјРёР»РєР° РіРµРЅРµСЂР°С†С–С— РєРѕРјРµРЅС‚Р°СЂСЏ"
             comment_for_sheet = format_comment_for_sheet(comment)
             ai_label = "OpenAI" if run_openai else "Claude"
 
@@ -782,20 +798,20 @@ if run_openai or run_claude:
             if google_client:
                 try:
                     if not call["ret_sheet_id"]:
-                        st.error("Не обрано проєкт або менеджера РЕТ")
+                        st.error("РќРµ РѕР±СЂР°РЅРѕ РїСЂРѕС”РєС‚ Р°Р±Рѕ РјРµРЅРµРґР¶РµСЂР° Р Р•Рў")
                         continue
 
-                    # 🟢 таблиця менеджера
+                    # рџџў С‚Р°Р±Р»РёС†СЏ РјРµРЅРµРґР¶РµСЂР°
                     sheet = google_client.open_by_key(call["ret_sheet_id"]).sheet1
 
-                    # 🟢 формуємо оцінку одним рядком
+                    # рџџў С„РѕСЂРјСѓС”РјРѕ РѕС†С–РЅРєСѓ РѕРґРЅРёРј СЂСЏРґРєРѕРј
                     total_score = sum(scores.values())
 
-                    # 🟢 спочатку оцінки
+                    # рџџў СЃРїРѕС‡Р°С‚РєСѓ РѕС†С–РЅРєРё
                     res = write_to_google_sheet(sheet, call, scores) 
                     st.write("WRITE RESULT:", res)
 
-                    # 🟢 запис у таблицю менеджера (твоя структура)
+                    # рџџў Р·Р°РїРёСЃ Сѓ С‚Р°Р±Р»РёС†СЋ РјРµРЅРµРґР¶РµСЂР° (С‚РІРѕСЏ СЃС‚СЂСѓРєС‚СѓСЂР°)
                     append_manager_log(
                         sheet,
                         call,
@@ -804,8 +820,8 @@ if run_openai or run_claude:
                         ai_label
                     )
 
-                    # 🟢 лог таблиця
-                    log_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("Лист 1")
+                    # рџџў Р»РѕРі С‚Р°Р±Р»РёС†СЏ
+                    log_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("Р›РёСЃС‚ 1")
                     append_qa_log(
                         log_sheet,
                         call,
@@ -820,18 +836,18 @@ if run_openai or run_claude:
 
 # ================= OUTPUT =================
 for i, res in enumerate(st.session_state["results"]):
-    with st.expander(f"📞 Дзвінок {i+1}", expanded=(i == 0)):
+    with st.expander(f"рџ“ћ Р”Р·РІС–РЅРѕРє {i+1}", expanded=(i == 0)):
         df = pd.DataFrame(
             list(res["scores"].items()),
-            columns=["Критерій", "Оцінка"]
+            columns=["РљСЂРёС‚РµСЂС–Р№", "РћС†С–РЅРєР°"]
         )
-        df["Оцінка"] = df["Оцінка"].apply(lambda x: f"{float(x):.1f}")
+        df["РћС†С–РЅРєР°"] = df["РћС†С–РЅРєР°"].apply(lambda x: f"{float(x):.1f}")
         st.table(df)
 
         total = sum(res["scores"].values())
-        st.success(f"Загальний бал: {total:.1f}")
+        st.success(f"Р—Р°РіР°Р»СЊРЅРёР№ Р±Р°Р»: {total:.1f}")
 
-        st.markdown("### 💬 Коментар QA")
+        st.markdown("### рџ’¬ РљРѕРјРµРЅС‚Р°СЂ QA")
         for line in res["comment"].split("\n"):     
             st.write(line)
 
@@ -840,12 +856,12 @@ if st.session_state["results"]:
     xls = BytesIO()
     with pd.ExcelWriter(xls, engine="openpyxl") as writer:
         for i, res in enumerate(st.session_state["results"]):
-            df = pd.DataFrame(res["scores"].items(), columns=["Критерій", "Оцінка"])
+            df = pd.DataFrame(res["scores"].items(), columns=["РљСЂРёС‚РµСЂС–Р№", "РћС†С–РЅРєР°"])
             df.to_excel(writer, sheet_name=f"Call_{i+1}", index=False)
     xls.seek(0)
 
     st.download_button(
-        label="📥 Завантажити Excel",
+        label="рџ“Ґ Р—Р°РІР°РЅС‚Р°Р¶РёС‚Рё Excel",
         data=xls,
         file_name="qa_results.xlsx"
     )
