@@ -446,6 +446,53 @@ def build_dictionary_context(replacements):
     return "\n".join([f"{k} → {v}" for k, v in replacements.items()])
 
 
+def normalize_forbidden_phrase(text):
+    normalized = str(text or "").strip().lower()
+    normalized = normalized.replace("’", "'").replace("`", "'").replace("ё", "е")
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized
+
+
+def detect_forbidden_phrases_in_dialogue(dialogue):
+    if not dialogue:
+        return []
+
+    manager_lines = []
+    for line in str(dialogue).splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Менеджер:"):
+            manager_lines.append(stripped.split(":", 1)[1].strip())
+
+    manager_text = " ".join(manager_lines)
+    if not manager_text:
+        manager_text = str(dialogue)
+
+    normalized_text = normalize_forbidden_phrase(manager_text)
+    detected = []
+
+    for phrase in FORBIDDEN_PROFESSIONALISM_PHRASES:
+        normalized_phrase = normalize_forbidden_phrase(phrase)
+        if not normalized_phrase:
+            continue
+
+        if " " in normalized_phrase:
+            matched = normalized_phrase in normalized_text
+        else:
+            matched = re.search(rf"(?<!\w){re.escape(normalized_phrase)}(?!\w)", normalized_text) is not None
+
+        if matched:
+            detected.append(phrase)
+
+    return detected
+
+
+def validate_forbidden_words(features, dialogue):
+    detected = detect_forbidden_phrases_in_dialogue(dialogue)
+    features["forbidden_words_detected"] = detected
+    features["forbidden_words_used"] = bool(detected)
+    return features
+
+
 def get_analysis_output_schema():
     return """
 Поверни ONLY valid JSON такого формату:
@@ -916,6 +963,7 @@ if run_openai or run_claude:
             clean_dialogue = analysis_result.get("cleaned_transcript") or transcript
             clean_dialogue = apply_replacements(clean_dialogue, replacements)
             features = analysis_result.get("features", {})
+            features = validate_forbidden_words(features, clean_dialogue)
             comment = analysis_result.get("qa_comment", "").strip()
             presentation_detected = detect_presentation(clean_dialogue, kb_data)
 
