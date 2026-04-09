@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import re
 
 import gspread
@@ -6,7 +7,7 @@ from google.oauth2.service_account import Credentials
 
 
 def connect_google():
-    """Підключення до Google Sheets."""
+    """РџС–РґРєР»СЋС‡РµРЅРЅСЏ РґРѕ Google Sheets."""
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
@@ -19,7 +20,7 @@ def connect_google():
 
 
 def extract_sheet_id(sheet_value):
-    """Повертає sheet id з повного URL або сирого значення."""
+    """РџРѕРІРµСЂС‚Р°С” sheet id Р· РїРѕРІРЅРѕРіРѕ URL Р°Р±Рѕ СЃРёСЂРѕРіРѕ Р·РЅР°С‡РµРЅРЅСЏ."""
     if not sheet_value:
         return ""
 
@@ -32,7 +33,7 @@ def extract_sheet_id(sheet_value):
 
 
 def normalize_header(value):
-    """Нормалізує назви колонок."""
+    """РќРѕСЂРјР°Р»С–Р·СѓС” РЅР°Р·РІРё РєРѕР»РѕРЅРѕРє."""
     text = str(value or "")
     text = text.replace("\ufeff", "").replace("\u00a0", " ").strip().upper()
     text = re.sub(r"\s+", " ", text)
@@ -40,7 +41,7 @@ def normalize_header(value):
 
 
 def load_managers_config(google_client, log_sheet_id, worksheet_name="MANAGERS"):
-    """Зчитує список менеджерів і проєктів з технічного аркуша."""
+    """Р—С‡РёС‚СѓС” СЃРїРёСЃРѕРє РјРµРЅРµРґР¶РµСЂС–РІ С– РїСЂРѕС”РєС‚С–РІ Р· С‚РµС…РЅС–С‡РЅРѕРіРѕ Р°СЂРєСѓС€Р°."""
     worksheet = google_client.open_by_key(log_sheet_id).worksheet(worksheet_name)
     values = worksheet.get_all_values()
 
@@ -113,23 +114,23 @@ def load_managers_config(google_client, log_sheet_id, worksheet_name="MANAGERS")
 
 
 CRITERIA_ROWS = {
-    "Встановлення контакту": 5,
-    "Спроба презентації": 6,
-    "Домовленість про наступний контакт": 7,
-    "Пропозиція бонусу": 8,
-    "Завершення розмови": 9,
-    "Передзвон клієнту": 10,
-    "Не додумувати": 11,
-    "Якість мовлення": 12,
-    "Професіоналізм": 13,
-    "Оформлення картки": 14,
-    "Робота із запереченнями": 15,
-    "Утримання клієнта": 16,
+    "Р’СЃС‚Р°РЅРѕРІР»РµРЅРЅСЏ РєРѕРЅС‚Р°РєС‚Сѓ": 5,
+    "РЎРїСЂРѕР±Р° РїСЂРµР·РµРЅС‚Р°С†С–С—": 6,
+    "Р”РѕРјРѕРІР»РµРЅС–СЃС‚СЊ РїСЂРѕ РЅР°СЃС‚СѓРїРЅРёР№ РєРѕРЅС‚Р°РєС‚": 7,
+    "РџСЂРѕРїРѕР·РёС†С–СЏ Р±РѕРЅСѓСЃСѓ": 8,
+    "Р—Р°РІРµСЂС€РµРЅРЅСЏ СЂРѕР·РјРѕРІРё": 9,
+    "РџРµСЂРµРґР·РІРѕРЅ РєР»С–С”РЅС‚Сѓ": 10,
+    "РќРµ РґРѕРґСѓРјСѓРІР°С‚Рё": 11,
+    "РЇРєС–СЃС‚СЊ РјРѕРІР»РµРЅРЅСЏ": 12,
+    "РџСЂРѕС„РµСЃС–РѕРЅР°Р»С–Р·Рј": 13,
+    "РћС„РѕСЂРјР»РµРЅРЅСЏ РєР°СЂС‚РєРё": 14,
+    "Р РѕР±РѕС‚Р° С–Р· Р·Р°РїРµСЂРµС‡РµРЅРЅСЏРјРё": 15,
+    "РЈС‚СЂРёРјР°РЅРЅСЏ РєР»С–С”РЅС‚Р°": 16,
 }
 
 
 def format_score_sheet(x):
-    """Форматує оцінку для Google Sheets."""
+    """Р¤РѕСЂРјР°С‚СѓС” РѕС†С–РЅРєСѓ РґР»СЏ Google Sheets."""
     try:
         return float(x)
     except (ValueError, TypeError):
@@ -137,7 +138,7 @@ def format_score_sheet(x):
 
 
 def find_next_column(sheet):
-    """Знаходить наступну вільну колонку для блоку оцінок."""
+    """Р—РЅР°С…РѕРґРёС‚СЊ РЅР°СЃС‚СѓРїРЅСѓ РІС–Р»СЊРЅСѓ РєРѕР»РѕРЅРєСѓ РґР»СЏ Р±Р»РѕРєСѓ РѕС†С–РЅРѕРє."""
     try:
         row = sheet.row_values(3)
         for i, value in enumerate(row, start=1):
@@ -149,7 +150,7 @@ def find_next_column(sheet):
 
 
 def find_next_row(sheet, start_row=1, key_column=1):
-    """Знаходить перший вільний рядок, починаючи зі start_row."""
+    """Р—РЅР°С…РѕРґРёС‚СЊ РїРµСЂС€РёР№ РІС–Р»СЊРЅРёР№ СЂСЏРґРѕРє, РїРѕС‡РёРЅР°СЋС‡Рё Р·С– start_row."""
     try:
         column_values = sheet.col_values(key_column)
         row = start_row
@@ -166,7 +167,7 @@ def find_next_row(sheet, start_row=1, key_column=1):
 
 
 def write_to_google_sheet(sheet, meta, scores):
-    """Записує блок оцінок у таблицю менеджера по колонках."""
+    """Р—Р°РїРёСЃСѓС” Р±Р»РѕРє РѕС†С–РЅРѕРє Сѓ С‚Р°Р±Р»РёС†СЋ РјРµРЅРµРґР¶РµСЂР° РїРѕ РєРѕР»РѕРЅРєР°С…."""
     try:
         column = find_next_column(sheet)
 
@@ -199,7 +200,7 @@ def write_to_google_sheet(sheet, meta, scores):
 
 
 def append_manager_log(sheet, call, comment, total_score, ai_label, start_row=20):
-    """Додає підсумок перевірки в таблицю менеджера з рядка 20."""
+    """Р”РѕРґР°С” РїС–РґСЃСѓРјРѕРє РїРµСЂРµРІС–СЂРєРё РІ С‚Р°Р±Р»РёС†СЋ РјРµРЅРµРґР¶РµСЂР° Р· СЂСЏРґРєР° 20."""
     row_index = find_next_row(sheet, start_row=start_row, key_column=1)
     values = [[
         call.get("client_id", ""),
@@ -208,13 +209,14 @@ def append_manager_log(sheet, call, comment, total_score, ai_label, start_row=20
         call.get("call_date", ""),
         call.get("check_date", ""),
         ai_label,
+        call.get("call_completion_status", ""),
     ]]
-    sheet.update(f"A{row_index}:F{row_index}", values, value_input_option="RAW")
+    sheet.update(f"A{row_index}:G{row_index}", values, value_input_option="RAW")
     return row_index
 
 
 def append_qa_log(sheet, call, transcript, clean_dialogue, comment, total_score):
-    """Додає лог перевірки у QA_LOG_CALLS / Лист1."""
+    """Р”РѕРґР°С” Р»РѕРі РїРµСЂРµРІС–СЂРєРё Сѓ QA_LOG_CALLS / Р›РёСЃС‚ 1."""
     row_index = find_next_row(sheet, start_row=1, key_column=1)
     values = [[
         call.get("check_date", ""),
@@ -226,6 +228,7 @@ def append_qa_log(sheet, call, transcript, clean_dialogue, comment, total_score)
         clean_dialogue,
         comment,
         total_score,
+        call.get("call_completion_status", ""),
     ]]
-    sheet.update(f"A{row_index}:I{row_index}", values, value_input_option="RAW")
+    sheet.update(f"A{row_index}:J{row_index}", values, value_input_option="RAW")
     return row_index
