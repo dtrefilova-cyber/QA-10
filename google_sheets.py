@@ -136,16 +136,18 @@ def format_score_sheet(x):
         return 0.0
 
 
-def find_next_column(sheet):
+def find_next_column(sheet, start_column=1):
     """Знаходить наступну вільну колонку для блоку оцінок."""
     try:
         row = sheet.row_values(3)
         for i, value in enumerate(row, start=1):
+            if i < start_column:
+                continue
             if not value or value.strip() == "":
                 return i
-        return len(row) + 1
+        return max(start_column, len(row) + 1)
     except Exception:
-        return 1
+        return start_column
 
 
 def find_next_row(sheet, start_row=1, key_column=1):
@@ -165,10 +167,10 @@ def find_next_row(sheet, start_row=1, key_column=1):
         return start_row
 
 
-def write_to_google_sheet(sheet, meta, scores):
+def write_to_google_sheet(sheet, meta, scores, start_column=1):
     """Записує блок оцінок у таблицю менеджера по колонках."""
     try:
-        column = find_next_column(sheet)
+        column = find_next_column(sheet, start_column=start_column)
 
         def get_column_letter(n):
             string = ""
