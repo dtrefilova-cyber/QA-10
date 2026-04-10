@@ -848,6 +848,30 @@ def use_test_project_scores_sheet(call):
     )
 
 
+def get_manager_sheet_settings(call):
+    project = call.get("project")
+
+    if use_test_project_scores_sheet(call):
+        return {
+            "worksheet_name": "Оцінки",
+            "start_column": 4,
+            "log_start_row": 20,
+        }
+
+    if project in {"777", "Vegas", "Betking"}:
+        return {
+            "worksheet_name": "Оцінки",
+            "start_column": 4,
+            "log_start_row": 88,
+        }
+
+    return {
+        "worksheet_name": None,
+        "start_column": 1,
+        "log_start_row": 20,
+    }
+
+
 def apply_call_completion_rules(scores, features, meta):
     status = meta.get("call_completion_status", "")
     immediate_repeat = meta.get("repeat_call") == "так, був протягом години"
@@ -1001,12 +1025,13 @@ if run_openai or run_claude:
 
                     # 🟢 таблиця менеджера
                     workbook = google_client.open_by_key(call["ret_sheet_id"])
+                    sheet_settings = get_manager_sheet_settings(call)
                     scores_sheet = (
-                        workbook.worksheet("Оцінки")
-                        if use_test_project_scores_sheet(call)
+                        workbook.worksheet(sheet_settings["worksheet_name"])
+                        if sheet_settings["worksheet_name"]
                         else workbook.sheet1
                     )
-                    scores_start_column = 4 if use_test_project_scores_sheet(call) else 1
+                    scores_start_column = sheet_settings["start_column"]
 
                     # 🟢 формуємо оцінку одним рядком
                     total_score = sum(scores.values())
@@ -1026,7 +1051,8 @@ if run_openai or run_claude:
                         call,
                         comment_for_sheet,
                         total_score,
-                        ai_label
+                        ai_label,
+                        start_row=sheet_settings["log_start_row"],
                     )
 
                     # 🟢 лог таблиця
