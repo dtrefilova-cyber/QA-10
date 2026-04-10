@@ -1023,7 +1023,7 @@ if run_openai or run_claude:
 
                     # 🟢 запис у таблицю менеджера (твоя структура)
                     append_manager_log(
-                        workbook.sheet1,
+                        scores_sheet,
                         call,
                         comment_for_sheet,
                         total_score,
