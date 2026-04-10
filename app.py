@@ -960,7 +960,7 @@ def get_manager_sheet_settings(call):
     return {
         "worksheet_name": "Оцінки",
         "start_column": 4,
-        "scores_start_row": 88,
+        "scores_start_row": 89,
         "log_start_row": 110,
     }
 
