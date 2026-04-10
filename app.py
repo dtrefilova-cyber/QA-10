@@ -862,7 +862,7 @@ def get_manager_sheet_settings(call):
         return {
             "worksheet_name": "Оцінки",
             "start_column": 4,
-            "log_start_row": 88,
+            "log_start_row": 110,
         }
 
     return {
