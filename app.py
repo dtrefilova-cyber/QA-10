@@ -786,7 +786,6 @@ def score_call(f, meta, dialogue=None):
             20 if lvl == "strong"
             else 15 if lvl == "weak"
             else 10 if lvl == "formal"
-            else 5 if lvl == "none"
             else 0
         )
 
