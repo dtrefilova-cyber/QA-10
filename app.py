@@ -949,8 +949,6 @@ def use_test_project_scores_sheet(call):
 
 
 def get_manager_sheet_settings(call):
-    project = call.get("project")
-
     if use_test_project_scores_sheet(call):
         return {
             "worksheet_name": "Оцінки",
@@ -959,19 +957,11 @@ def get_manager_sheet_settings(call):
             "log_start_row": 20,
         }
 
-    if project in {"777", "Vegas", "Betking"}:
-        return {
-            "worksheet_name": "Оцінки",
-            "start_column": 4,
-            "scores_start_row": 88,
-            "log_start_row": 110,
-        }
-
     return {
-        "worksheet_name": None,
-        "start_column": 1,
-        "scores_start_row": 1,
-        "log_start_row": 20,
+        "worksheet_name": "Оцінки",
+        "start_column": 4,
+        "scores_start_row": 88,
+        "log_start_row": 110,
     }
 
 
