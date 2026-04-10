@@ -842,6 +842,13 @@ def ensure_forbidden_words_comment(comment, features):
     return f"{comment_text}\n{forbidden_line}"
 
 
+def use_test_project_scores_sheet(call):
+    return (
+        call.get("project") == "ТЕСТ"
+        and call.get("ret_manager") in {"Жарікова Анастасія", "Бурий Андрій"}
+    )
+
+
 def apply_call_completion_rules(scores, features, meta):
     status = meta.get("call_completion_status", "")
     immediate_repeat = meta.get("repeat_call") == "так, був протягом години"
@@ -994,18 +1001,29 @@ if run_openai or run_claude:
                         continue
 
                     # 🟢 таблиця менеджера
-                    sheet = google_client.open_by_key(call["ret_sheet_id"]).sheet1
+                    workbook = google_client.open_by_key(call["ret_sheet_id"])
+                    scores_sheet = (
+                        workbook.worksheet("Оцінки")
+                        if use_test_project_scores_sheet(call)
+                        else workbook.sheet1
+                    )
+                    scores_start_column = 4 if use_test_project_scores_sheet(call) else 1
 
                     # 🟢 формуємо оцінку одним рядком
                     total_score = sum(scores.values())
 
                     # 🟢 спочатку оцінки
-                    res = write_to_google_sheet(sheet, call, scores) 
+                    res = write_to_google_sheet(
+                        scores_sheet,
+                        call,
+                        scores,
+                        start_column=scores_start_column,
+                    )
                     st.write("WRITE RESULT:", res)
 
                     # 🟢 запис у таблицю менеджера (твоя структура)
                     append_manager_log(
-                        sheet,
+                        workbook.sheet1,
                         call,
                         comment_for_sheet,
                         total_score,
