@@ -136,10 +136,10 @@ def format_score_sheet(x):
         return 0.0
 
 
-def find_next_column(sheet, start_column=1):
+def find_next_column(sheet, start_column=1, scan_row=3):
     """Знаходить наступну вільну колонку для блоку оцінок."""
     try:
-        row = sheet.row_values(3)
+        row = sheet.row_values(scan_row)
         for i, value in enumerate(row, start=1):
             if i < start_column:
                 continue
@@ -167,10 +167,11 @@ def find_next_row(sheet, start_row=1, key_column=1):
         return start_row
 
 
-def write_to_google_sheet(sheet, meta, scores, start_column=1):
+def write_to_google_sheet(sheet, meta, scores, start_column=1, start_row=1):
     """Записує блок оцінок у таблицю менеджера по колонках."""
     try:
-        column = find_next_column(sheet, start_column=start_column)
+        scan_row = start_row + 2
+        column = find_next_column(sheet, start_column=start_column, scan_row=scan_row)
 
         def get_column_letter(n):
             string = ""
@@ -181,15 +182,15 @@ def write_to_google_sheet(sheet, meta, scores, start_column=1):
 
         col_letter = get_column_letter(column)
         updates = [
-            (f"{col_letter}1", meta.get("call_date", "")),
-            (f"{col_letter}2", meta.get("client_id", "")),
-            (f"{col_letter}3", meta.get("qa_manager", "")),
-            (f"{col_letter}4", meta.get("check_date", "")),
+            (f"{col_letter}{start_row}", meta.get("call_date", "")),
+            (f"{col_letter}{start_row + 1}", meta.get("client_id", "")),
+            (f"{col_letter}{start_row + 2}", meta.get("qa_manager", "")),
+            (f"{col_letter}{start_row + 3}", meta.get("check_date", "")),
         ]
 
         for key, value in scores.items():
             if key in CRITERIA_ROWS:
-                row = CRITERIA_ROWS[key]
+                row = start_row + (CRITERIA_ROWS[key] - 1)
                 updates.append((f"{col_letter}{row}", format_score_sheet(value)))
 
         for cell, val in updates:
