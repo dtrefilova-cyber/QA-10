@@ -460,12 +460,12 @@ def detect_forbidden_phrases_in_dialogue(dialogue):
     manager_lines = []
     for line in str(dialogue).splitlines():
         stripped = line.strip()
-        if stripped.startswith("Менеджер:"):
+        if stripped.startswith("Менеджер:") or stripped.startswith("ch_0:"):
             manager_lines.append(stripped.split(":", 1)[1].strip())
 
     manager_text = " ".join(manager_lines)
     if not manager_text:
-        manager_text = str(dialogue)
+        return []
 
     normalized_text = normalize_forbidden_phrase(manager_text)
     detected = []
@@ -810,35 +810,135 @@ def format_comment_for_sheet(comment):
     return " | ".join(lines)
 
 
-def ensure_forbidden_words_comment(comment, features):
-    if not features.get("forbidden_words_used"):
-        return comment
+def build_readable_qa_comment(features, scores, call):
+    lines = []
+
+    contact_elements = sum([
+        bool(features.get("manager_name_present")),
+        bool(features.get("manager_position_present")),
+        bool(features.get("company_present")),
+        bool(features.get("client_name_used")),
+        bool(features.get("purpose_present")),
+    ])
+    if scores.get("Встановлення контакту", 0) >= 5:
+        lines.append("Встановлення контакту: менеджер коректно представився, звернувся до клієнта та озвучив мету дзвінка.")
+    elif contact_elements >= 2:
+        lines.append("Встановлення контакту: контакт встановлено частково, але не всі обов'язкові елементи були озвучені.")
+    else:
+        lines.append("Встановлення контакту: менеджер не представився повноцінно і не окреслив мету дзвінка.")
+
+    presentation_level = features.get("presentation_level", "none")
+    if presentation_level == "full":
+        lines.append("Спроба презентації: менеджер презентував продукт, пояснив суть пропозиції та що клієнту потрібно зробити.")
+    elif presentation_level == "partial":
+        lines.append("Спроба презентації: менеджер лише коротко згадав продукт або активність без повного пояснення суті та дії для клієнта.")
+    else:
+        lines.append("Спроба презентації: презентації продукту не було; інформація лише про бонус не рахується як презентація.")
+
+    followup_type = features.get("followup_type", "none")
+    if followup_type == "exact_time":
+        lines.append("Домовленість про наступний контакт: узгоджено конкретний час наступного дзвінка.")
+    elif followup_type == "offer":
+        lines.append("Домовленість про наступний контакт: передзвон запропоновано, але без узгодженого точного часу.")
+    else:
+        lines.append("Домовленість про наступний контакт: домовленості про наступний дзвінок не було.")
+
+    if not features.get("bonus_offered"):
+        lines.append("Пропозиція бонусу: бонус клієнту не озвучено.")
+    else:
+        bonus_details = []
+        if features.get("bonus_has_type"):
+            bonus_details.append("тип бонусу")
+        if features.get("bonus_has_duration"):
+            bonus_details.append("термін дії")
+        if features.get("bonus_has_value"):
+            bonus_details.append("розмір бонусу")
+        if scores.get("Пропозиція бонусу", 0) >= 10:
+            lines.append("Пропозиція бонусу: бонус озвучено як вигоду, названо щонайменше дві його умови.")
+        else:
+            detail_text = ", ".join(bonus_details) if bonus_details else "лише частину умов"
+            lines.append(f"Пропозиція бонусу: бонус згадано формально, озвучено {detail_text}.")
+
+    if features.get("has_farewell"):
+        lines.append("Завершення розмови: розмову завершено з прощанням.")
+    else:
+        lines.append("Завершення розмови: прощання наприкінці розмови відсутнє.")
+
+    repeat_call = call.get("repeat_call", "")
+    if scores.get("Передзвон клієнту", 0) == 15:
+        if repeat_call == "так, був протягом години":
+            lines.append("Передзвон клієнту: передзвон виконано протягом години.")
+        else:
+            lines.append("Передзвон клієнту: штрафу немає, додатковий передзвон у цьому сценарії не був потрібний.")
+    elif scores.get("Передзвон клієнту", 0) == 10:
+        lines.append("Передзвон клієнту: передзвон був, але не одразу, а протягом двох годин.")
+    else:
+        lines.append("Передзвон клієнту: потрібного передзвону не було, тому критерій не виконано.")
+
+    if features.get("assumption_made"):
+        lines.append("Не додумувати: менеджер припускав або додумував інформацію замість опори на факти з діалогу.")
+    else:
+        lines.append("Не додумувати: менеджер не додумував зайвого і тримався фактів розмови.")
+
+    if features.get("speech_quality") == "good":
+        lines.append("Якість мовлення: мовлення достатньо чисте та зрозуміле для аналізу.")
+    else:
+        lines.append("Якість мовлення: у мовленні є проблеми, які заважають сприйняттю або точному аналізу.")
 
     detected = [
         str(item).strip()
         for item in features.get("forbidden_words_detected", [])
         if str(item).strip()
     ]
-    if not detected:
-        detected = ["заборонене формулювання"]
+    if detected:
+        lines.append(
+            "Професіоналізм: 0 балів, менеджер використав заборонені слова/фрази: "
+            f"{', '.join(detected)}."
+        )
+    elif call.get("bonus_check") == "помилково нараховано":
+        lines.append("Професіоналізм: критерій знижено через помилково нарахований бонус.")
+    else:
+        lines.append("Професіоналізм: заборонених слів зі списку не виявлено.")
 
-    comment_text = (comment or "").strip()
-    lowered = comment_text.lower()
-    has_professionalism_line = "професіонал" in lowered
-    mentions_detected = any(item.lower() in lowered for item in detected)
+    comment_match_level = features.get("comment_match_level", "none")
+    if comment_match_level == "full" and features.get("comment_complete"):
+        lines.append("Оформлення картки: коментар у картці відповідає змісту дзвінка і містить ключову інформацію.")
+    elif comment_match_level == "partial":
+        lines.append("Оформлення картки: коментар у картці неповний або не повністю відповідає змісту розмови.")
+    else:
+        lines.append("Оформлення картки: коментар у картці відсутній або не відображає результат дзвінка.")
 
-    if has_professionalism_line and mentions_detected:
-        return comment_text
+    if not features.get("objection_detected"):
+        lines.append("Робота із запереченнями: заперечень від клієнта не було.")
+    elif scores.get("Робота із запереченнями", 0) >= 10:
+        lines.append("Робота із запереченнями: менеджер відпрацював заперечення аргументовано.")
+    elif scores.get("Робота із запереченнями", 0) >= 5:
+        lines.append("Робота із запереченнями: була спроба відпрацювати заперечення, але недостатньо глибока.")
+    else:
+        lines.append("Робота із запереченнями: заперечення не були відпрацьовані.")
 
-    forbidden_line = (
-        "Професіоналізм: 0 - менеджер використав заборонені слова/фрази: "
-        f"{', '.join(detected)}."
-    )
+    if features.get("client_wants_to_end"):
+        continuation_level = features.get("continuation_level", "none")
+        if scores.get("Утримання клієнта", 0) >= 20 or continuation_level == "strong":
+            lines.append("Утримання клієнта: менеджер зробив кілька змістовних спроб втримати клієнта в розмові.")
+        elif scores.get("Утримання клієнта", 0) >= 15 or continuation_level == "weak":
+            lines.append("Утримання клієнта: була одна реальна спроба втримати клієнта в розмові.")
+        elif scores.get("Утримання клієнта", 0) >= 10 or continuation_level == "formal":
+            lines.append("Утримання клієнта: реакція менеджера була формальною, без повноцінного утримання.")
+        else:
+            lines.append("Утримання клієнта: менеджер не втримував клієнта в розмові, коли це було потрібно.")
+    else:
+        continuation_behavior = features.get("continuation_behavior", "neutral")
+        if scores.get("Утримання клієнта", 0) >= 20 or continuation_behavior == "active":
+            lines.append("Утримання клієнта: менеджер активно вів діалог і не давав розмові згаснути.")
+        elif scores.get("Утримання клієнта", 0) >= 15 or continuation_behavior == "neutral":
+            lines.append("Утримання клієнта: менеджер підтримував розмову на нормальному рівні без провалів.")
+        elif scores.get("Утримання клієнта", 0) >= 10 or continuation_behavior == "passive":
+            lines.append("Утримання клієнта: розмову вели пасивно, без достатньої ініціативи з боку менеджера.")
+        else:
+            lines.append("Утримання клієнта: менеджер допустив втрату розмови або сам спровокував її завершення.")
 
-    if not comment_text:
-        return forbidden_line
-
-    return f"{comment_text}\n{forbidden_line}"
+    return "\n".join(lines)
 
 
 def use_test_project_scores_sheet(call):
@@ -855,6 +955,7 @@ def get_manager_sheet_settings(call):
         return {
             "worksheet_name": "Оцінки",
             "start_column": 4,
+            "scores_start_row": 1,
             "log_start_row": 20,
         }
 
@@ -862,12 +963,14 @@ def get_manager_sheet_settings(call):
         return {
             "worksheet_name": "Оцінки",
             "start_column": 4,
+            "scores_start_row": 88,
             "log_start_row": 110,
         }
 
     return {
         "worksheet_name": None,
         "start_column": 1,
+        "scores_start_row": 1,
         "log_start_row": 20,
     }
 
@@ -1006,9 +1109,7 @@ if run_openai or run_claude:
                 continue
 
             scores = score_call(features, call, clean_dialogue)
-            if not comment:
-                comment = "Помилка генерації коментаря"
-            comment = ensure_forbidden_words_comment(comment, features)
+            comment = build_readable_qa_comment(features, scores, call)
             comment_for_sheet = format_comment_for_sheet(comment)
             ai_label = "OpenAI" if run_openai else "Claude"
 
@@ -1042,6 +1143,7 @@ if run_openai or run_claude:
                         call,
                         scores,
                         start_column=scores_start_column,
+                        start_row=sheet_settings["scores_start_row"],
                     )
                     st.write("WRITE RESULT:", res)
 
