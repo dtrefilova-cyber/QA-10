@@ -954,13 +954,15 @@ def get_manager_sheet_settings(call):
             "worksheet_name": "Оцінки",
             "start_column": 4,
             "scores_start_row": 1,
+            "criteria_start_row": 5,
             "log_start_row": 20,
         }
 
     return {
         "worksheet_name": "Оцінки",
         "start_column": 4,
-        "scores_start_row": 89,
+        "scores_start_row": 88,
+        "criteria_start_row": 93,
         "log_start_row": 110,
     }
 
@@ -1134,6 +1136,7 @@ if run_openai or run_claude:
                         scores,
                         start_column=scores_start_column,
                         start_row=sheet_settings["scores_start_row"],
+                        criteria_start_row=sheet_settings["criteria_start_row"],
                     )
                     st.write("WRITE RESULT:", res)
 
