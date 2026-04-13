@@ -44,7 +44,7 @@ st.markdown("""
 check_date = st.date_input("Дата перевірки", datetime.today())
 
 qa_managers_list = [
-    "Дар'я", "Надя", "Настя", "Владимира", "Діана", "Руслана", "Олексій"
+    "Дар'я", "Надя", "Настя", "Владимира", "Діана", "Руслана", "Олексій", "Катерина"
 ]
 
 FORBIDDEN_PROFESSIONALISM_PHRASES = [
