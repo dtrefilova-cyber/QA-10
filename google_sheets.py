@@ -237,3 +237,24 @@ def append_qa_log(sheet, call, transcript, clean_dialogue, comment, total_score)
     ]]
     sheet.update(f"A{row_index}:J{row_index}", values, value_input_option="RAW")
     return row_index
+
+
+def append_log_info(sheet, call):
+    """Додає в LOG_INFO всі значення, які ввели у форму вручну."""
+    row_index = find_next_row(sheet, start_row=1, key_column=1)
+    values = [[
+        call.get("check_date", ""),
+        call.get("qa_manager", ""),
+        call.get("project", ""),
+        call.get("ret_manager", ""),
+        call.get("ret_sheet_id", ""),
+        call.get("client_id", ""),
+        call.get("call_date", ""),
+        call.get("url", ""),
+        call.get("bonus_check", ""),
+        call.get("repeat_call", ""),
+        call.get("call_completion_status", ""),
+        call.get("manager_comment", ""),
+    ]]
+    sheet.update(f"A{row_index}:L{row_index}", values, value_input_option="RAW")
+    return row_index
