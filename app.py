@@ -4,6 +4,7 @@ import requests
 import json
 import re
 from google_sheets import (
+    append_log_info,
     append_manager_log,
     append_qa_log,
     connect_google,
@@ -43,7 +44,7 @@ st.markdown("""
 check_date = st.date_input("Дата перевірки", datetime.today())
 
 qa_managers_list = [
-    "Дар'я", "Надя", "Настя", "Владимира", "Діана", "Руслана", "Олексій", "Катерина"
+    "Дар'я", "Надя", "Настя", "Владимира", "Діана", "Руслана", "Олексій"
 ]
 
 FORBIDDEN_PROFESSIONALISM_PHRASES = [
@@ -1159,6 +1160,11 @@ if run_openai or run_claude:
                         clean_dialogue,
                         comment,
                         total_score
+                    )
+                    log_info_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("LOG_INFO")
+                    append_log_info(
+                        log_info_sheet,
+                        call,
                     )
 
                 except Exception as e:
