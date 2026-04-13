@@ -167,10 +167,13 @@ def find_next_row(sheet, start_row=1, key_column=1):
         return start_row
 
 
-def write_to_google_sheet(sheet, meta, scores, start_column=1, start_row=1):
+def write_to_google_sheet(sheet, meta, scores, start_column=1, start_row=1, criteria_start_row=None):
     """Записує блок оцінок у таблицю менеджера по колонках."""
     try:
-        scan_row = start_row + 2
+        if criteria_start_row is None:
+            criteria_start_row = start_row + 4
+
+        scan_row = criteria_start_row
         column = find_next_column(sheet, start_column=start_column, scan_row=scan_row)
 
         def get_column_letter(n):
@@ -190,7 +193,7 @@ def write_to_google_sheet(sheet, meta, scores, start_column=1, start_row=1):
 
         for key, value in scores.items():
             if key in CRITERIA_ROWS:
-                row = start_row + (CRITERIA_ROWS[key] - 1)
+                row = criteria_start_row + (CRITERIA_ROWS[key] - 5)
                 updates.append((f"{col_letter}{row}", format_score_sheet(value)))
 
         for cell, val in updates:
