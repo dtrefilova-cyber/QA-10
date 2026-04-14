@@ -32,6 +32,7 @@ claude_client = anthropic.Anthropic(
 LOG_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 DICT_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 KB_SHEET_ID = "1yZbtao1P1Xa0r6ZJAnjkJWikxcWQ90XbXvaT7EWQKeU"
+ANALYSIS_CACHE_VERSION = "2026-04-14-1"
 
 # ================= HEADER =================
 st.markdown("""
@@ -44,7 +45,7 @@ st.markdown("""
 check_date = st.date_input("Дата перевірки", datetime.today())
 
 qa_managers_list = [
-    "Дар'я", "Надя", "Настя", "Владимира", "Діана", "Руслана", "Олексій", "Катерина"
+    "Дар'я", "Надя", "Настя", "Владимира", "Діана", "Руслана", "Олексій"
 ]
 
 FORBIDDEN_PROFESSIONALISM_PHRASES = [
@@ -78,9 +79,22 @@ call_completion_statuses = [
     "🔴 (слухавку поклав менеджер)",
 ]
 
+@st.cache_data(ttl=300, show_spinner=False)
 def get_managers_config():
     google_client = connect_google()
     return load_managers_config(google_client, LOG_SHEET_ID)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_reference_data():
+    google_client = connect_google()
+    dict_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("DICT")
+    replacements = load_replacements(dict_sheet)
+
+    kb_sheet = google_client.open_by_key(KB_SHEET_ID).worksheet("INFO")
+    kb_data = load_kb_data(kb_sheet)
+    kb_context = build_kb_context(kb_data)
+    return replacements, kb_data, kb_context
 
 
 managers_meta = {
@@ -328,7 +342,15 @@ def detect_presentation(dialogue, kb_data):
     if not dialogue:
         return False
 
-    text = dialogue.lower()
+    manager_lines = []
+    for line in str(dialogue).splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Менеджер:") or stripped.startswith("ch_0:"):
+            manager_lines.append(stripped.split(":", 1)[1].strip())
+
+    text = " ".join(manager_lines).lower()
+    if not text:
+        return False
 
     for row in kb_data:
         name = (row.get("NAME") or "").lower()
@@ -494,6 +516,42 @@ def validate_forbidden_words(features, dialogue):
     return features
 
 
+def validate_assumption_made(features, dialogue):
+    if not features.get("assumption_made"):
+        return features
+
+    manager_lines = []
+    for line in str(dialogue or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Менеджер:") or stripped.startswith("ch_0:"):
+            manager_lines.append(stripped.split(":", 1)[1].strip().lower())
+
+    manager_text = " ".join(manager_lines)
+    if not manager_text:
+        features["assumption_made"] = False
+        return features
+
+    assumption_markers = [
+        "вам зараз незручно",
+        "я вам не заважаю",
+        "давайте іншим разом",
+        "ви, мабуть, зайняті",
+        "ви мабуть зайняті",
+        "немає часу так спілкуватися",
+        "вам, мабуть, нецікаво",
+        "вам, мабуть, незручно",
+        "вам, мабуть, не до розмови",
+        "вам мабуть нецікаво",
+        "вам мабуть незручно",
+        "вам мабуть не до розмови",
+    ]
+
+    if not any(marker in manager_text for marker in assumption_markers):
+        features["assumption_made"] = False
+
+    return features
+
+
 def get_analysis_output_schema():
     return """
 Поверни ONLY valid JSON такого формату:
@@ -656,6 +714,24 @@ def extract_features_claude(dialogue, comment, kb_context="", replacements=None)
         return {}
 
 
+@st.cache_data(show_spinner=False)
+def analyze_call_cached(ai_provider, url, call_date, dialogue, manager_comment, kb_context, replacements, cache_version):
+    if ai_provider == "openai":
+        return extract_features_openai(
+            dialogue,
+            manager_comment,
+            kb_context,
+            replacements,
+        )
+
+    return extract_features_claude(
+        dialogue,
+        manager_comment,
+        kb_context,
+        replacements,
+    )
+
+
 # ================= SCORING =================
 def score_call(f, meta, dialogue=None):
     s = {}
@@ -796,7 +872,7 @@ def score_call(f, meta, dialogue=None):
     else:
         s["Робота із запереченнями"] = (
             10 if lvl == "strong"
-            else 5 if lvl == "weak"
+            else 5 if lvl in {"weak", "formal"}
             else 0
         )
 
@@ -987,6 +1063,8 @@ def apply_call_completion_rules(scores, features, meta):
         return scores
 
     if status == "🟢 (слухавку поклав клієнт)":
+        scores["Завершення розмови"] = 5
+
         if (
             not logical_completion
             and not has_farewell
@@ -1044,12 +1122,7 @@ if run_openai or run_claude:
 
     try:
         google_client = connect_google()
-        dict_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("DICT")
-        replacements = load_replacements(dict_sheet)
-
-        kb_sheet = google_client.open_by_key(KB_SHEET_ID).worksheet("INFO")
-        kb_data = load_kb_data(kb_sheet)
-        kb_context = build_kb_context(kb_data)
+        replacements, kb_data, kb_context = get_reference_data()
         
     except Exception as e:
         st.error(f"Google connect error: {e}")
@@ -1067,20 +1140,16 @@ if run_openai or run_claude:
 
             transcript = apply_replacements(transcript, replacements)
 
-            if run_openai:
-                analysis_result = extract_features_openai(
-                    transcript,
-                    call["manager_comment"],
-                    kb_context,
-                    replacements
-                )
-            else:
-                analysis_result = extract_features_claude(
-                    transcript,
-                    call["manager_comment"],
-                    kb_context,
-                    replacements
-                )
+            analysis_result = analyze_call_cached(
+                "openai" if run_openai else "claude",
+                call["url"],
+                call["call_date"],
+                transcript,
+                call["manager_comment"],
+                kb_context,
+                replacements,
+                ANALYSIS_CACHE_VERSION,
+            )
 
             if not analysis_result:
                 st.warning("Помилка аналізу")
@@ -1090,6 +1159,7 @@ if run_openai or run_claude:
             clean_dialogue = apply_replacements(clean_dialogue, replacements)
             features = analysis_result.get("features", {})
             features = validate_forbidden_words(features, clean_dialogue)
+            features = validate_assumption_made(features, clean_dialogue)
             comment = analysis_result.get("qa_comment", "").strip()
             presentation_detected = detect_presentation(clean_dialogue, kb_data)
 
@@ -1112,36 +1182,40 @@ if run_openai or run_claude:
             })
 
             if google_client:
-                try:
-                    if not call["ret_sheet_id"]:
-                        st.error("Не обрано проєкт або менеджера РЕТ")
-                        continue
+                if not call["ret_sheet_id"]:
+                    st.error("Не обрано проєкт або менеджера РЕТ")
+                    continue
 
-                    # 🟢 таблиця менеджера
+                total_score = sum(scores.values())
+                sheet_settings = get_manager_sheet_settings(call)
+
+                try:
                     workbook = google_client.open_by_key(call["ret_sheet_id"])
-                    sheet_settings = get_manager_sheet_settings(call)
                     scores_sheet = (
                         workbook.worksheet(sheet_settings["worksheet_name"])
                         if sheet_settings["worksheet_name"]
                         else workbook.sheet1
                     )
-                    scores_start_column = sheet_settings["start_column"]
+                except Exception as e:
+                    st.error(f"Google error [manager workbook]: {e}")
+                    continue
 
-                    # 🟢 формуємо оцінку одним рядком
-                    total_score = sum(scores.values())
-
-                    # 🟢 спочатку оцінки
+                try:
                     res = write_to_google_sheet(
                         scores_sheet,
                         call,
                         scores,
-                        start_column=scores_start_column,
+                        start_column=sheet_settings["start_column"],
                         start_row=sheet_settings["scores_start_row"],
                         criteria_start_row=sheet_settings["criteria_start_row"],
                     )
                     st.write("WRITE RESULT:", res)
+                    if res is not True:
+                        st.error(f"Google error [scores write]: {res}")
+                except Exception as e:
+                    st.error(f"Google error [scores write]: {e}")
 
-                    # 🟢 запис у таблицю менеджера (твоя структура)
+                try:
                     append_manager_log(
                         scores_sheet,
                         call,
@@ -1150,9 +1224,19 @@ if run_openai or run_claude:
                         ai_label,
                         start_row=sheet_settings["log_start_row"],
                     )
+                except Exception as e:
+                    st.error(f"Google error [manager log]: {e}")
 
-                    # 🟢 лог таблиця
-                    log_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("Лист 1")
+                try:
+                    log_workbook = google_client.open_by_key(LOG_SHEET_ID)
+                except Exception as e:
+                    st.error(f"Google error [QA logs workbook]: {e}")
+                    log_workbook = None
+
+                try:
+                    if log_workbook is None:
+                        raise RuntimeError("Не вдалося відкрити QA_LOGS_CALLS")
+                    log_sheet = log_workbook.worksheet("Лист 1")
                     append_qa_log(
                         log_sheet,
                         call,
@@ -1161,14 +1245,19 @@ if run_openai or run_claude:
                         comment,
                         total_score
                     )
-                    log_info_sheet = google_client.open_by_key(LOG_SHEET_ID).worksheet("LOG_INFO")
+                except Exception as e:
+                    st.error(f"Google error [QA log]: {e}")
+
+                try:
+                    if log_workbook is None:
+                        raise RuntimeError("Не вдалося відкрити QA_LOGS_CALLS")
+                    log_info_sheet = log_workbook.worksheet("LOG_INFO")
                     append_log_info(
                         log_info_sheet,
                         call,
                     )
-
                 except Exception as e:
-                    st.error(f"Google error: {e}")
+                    st.error(f"Google error [LOG_INFO]: {e}")
 
 # ================= OUTPUT =================
 for i, res in enumerate(st.session_state["results"]):
