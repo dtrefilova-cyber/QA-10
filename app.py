@@ -425,6 +425,7 @@ def apply_defaults(features):
         "client_name_used": False,
         "purpose_present": False,
         "friendly_question": False,
+        "noise_reaction": "none",
 
         "bonus_offered": False,
         "bonus_has_type": False,
@@ -451,9 +452,22 @@ def apply_defaults(features):
         "manager_hung_up_before_client_finished": False,
 
         "assumption_made": False,
+        "followup_attempts_count": 0,
+        "client_hung_up_interrupted": False,
+        "client_sick": False,
+        "manager_wished_recovery": False,
+        "client_military": False,
+        "manager_thanked_for_service": False,
+        "client_driving_or_no_phone": False,
+        "client_not_actual_client": False,
+        "manager_shared_bonus_with_third_party": False,
+        "client_unethical_behavior": False,
+        "manager_unethical_response": False,
 
         "comment_match_level": "none",
-        "comment_complete": False
+        "comment_complete": False,
+        "card_has_reason": False,
+        "card_has_followup_time": False
     }
 
     for k, v in defaults.items():
@@ -533,6 +547,7 @@ def validate_assumption_made(features, dialogue):
 
     assumption_markers = [
         "вам зараз незручно",
+        "чи зручно говорити",
         "я вам не заважаю",
         "давайте іншим разом",
         "ви, мабуть, зайняті",
@@ -558,31 +573,45 @@ def get_analysis_output_schema():
 {
   "cleaned_transcript": "очищений діалог",
   "qa_comment": "готовий QA-коментар по критеріях, кожен критерій з нового рядка",
-  "features": {
+    "features": {
     "manager_name_present": boolean,
     "manager_position_present": boolean,
     "company_present": boolean,
-    "client_name_used": boolean,
-    "purpose_present": boolean,
-    "friendly_question": boolean,
-    "presentation_level": "none" | "partial" | "full",
-    "followup_type": "none" | "offer" | "exact_time",
-    "bonus_offered": boolean,
-    "bonus_has_type": boolean,
-    "bonus_has_duration": boolean,
-    "bonus_has_value": boolean,
+      "client_name_used": boolean,
+      "purpose_present": boolean,
+      "friendly_question": boolean,
+      "noise_reaction": "none" | "correct" | "incorrect",
+      "presentation_level": "none" | "partial" | "full",
+      "followup_type": "none" | "offer" | "exact_time",
+      "followup_attempts_count": integer,
+      "client_hung_up_interrupted": boolean,
+      "bonus_offered": boolean,
+      "bonus_has_type": boolean,
+      "bonus_has_duration": boolean,
+      "bonus_has_value": boolean,
     "has_farewell": boolean,
     "is_limited_dialogue": boolean,
     "objection_detected": boolean,
     "continuation_level": "none" | "formal" | "weak" | "strong" | "forced_end",
     "continuation_behavior": "active" | "neutral" | "passive" | "forced_end",
-    "client_wants_to_end": boolean,
-    "assumption_made": boolean,
-    "comment_match_level": "none" | "partial" | "full",
-    "comment_complete": boolean,
-    "speech_quality": "bad" | "good",
-    "forbidden_words_used": boolean,
-    "forbidden_words_detected": ["рядок 1", "рядок 2"],
+      "client_wants_to_end": boolean,
+      "assumption_made": boolean,
+      "client_sick": boolean,
+      "manager_wished_recovery": boolean,
+      "client_military": boolean,
+      "manager_thanked_for_service": boolean,
+      "client_driving_or_no_phone": boolean,
+      "client_not_actual_client": boolean,
+      "manager_shared_bonus_with_third_party": boolean,
+      "client_unethical_behavior": boolean,
+      "manager_unethical_response": boolean,
+      "comment_match_level": "none" | "partial" | "full",
+      "comment_complete": boolean,
+      "card_has_reason": boolean,
+      "card_has_followup_time": boolean,
+      "speech_quality": "bad" | "good",
+      "forbidden_words_used": boolean,
+      "forbidden_words_detected": ["рядок 1", "рядок 2"],
     "conversation_logically_completed": boolean,
     "client_negative": boolean,
     "client_used_profanity": boolean,
@@ -735,6 +764,13 @@ def analyze_call_cached(ai_provider, url, call_date, dialogue, manager_comment, 
 # ================= SCORING =================
 def score_call(f, meta, dialogue=None):
     s = {}
+    noise_reaction = f.get("noise_reaction", "none")
+    followup_type = f.get("followup_type", "none")
+    followup_attempts_count = int(f.get("followup_attempts_count") or 0)
+    is_military_client = bool(f.get("client_military"))
+    is_driving_or_no_phone = bool(f.get("client_driving_or_no_phone"))
+    unethical_client_behavior = bool(f.get("client_unethical_behavior"))
+    manager_unethical_response = bool(f.get("manager_unethical_response"))
 
     # якщо автовідповідач → всі 0
     if dialogue and is_autoresponder(dialogue):
@@ -755,25 +791,38 @@ def score_call(f, meta, dialogue=None):
 
     # ---------------- Контакт ----------------
     elements = sum([
-    f["manager_name_present"],
-    f["manager_position_present"],
-    f["company_present"],
-    f["client_name_used"],
-    f["purpose_present"],
-    f.get("friendly_question", False)
-])
+        f["manager_name_present"],
+        f["manager_position_present"],
+        f["company_present"],
+        f["client_name_used"],
+        f["purpose_present"],
+        f.get("friendly_question", False) or noise_reaction == "correct"
+    ])
 
-    s["Встановлення контакту"] = (
+    contact_score = (
         7.5 if elements >= 4 else
         5 if elements == 3 else
         2.5 if elements == 2 else
         0
     )
 
+    if not f.get("client_name_used"):
+        contact_score -= 2.5
+
+    if (
+        (f.get("client_sick") and not f.get("manager_wished_recovery"))
+        or (is_military_client and not f.get("manager_thanked_for_service"))
+    ):
+        contact_score -= 2.5
+
+    s["Встановлення контакту"] = max(0, contact_score)
+
     # ---------------- Спроба презентації ----------------
     level = f.get("presentation_level", "none")
 
-    if level == "full":
+    if is_driving_or_no_phone:
+        s["Спроба презентації"] = 5
+    elif level == "full":
         s["Спроба презентації"] = 5
     elif level == "partial":
         s["Спроба презентації"] = 2.5
@@ -781,15 +830,23 @@ def score_call(f, meta, dialogue=None):
         s["Спроба презентації"] = 0
 
     # ---------------- Домовленість ----------------
-    fup = f.get("followup_type", "none")
     s["Домовленість про наступний контакт"] = (
-        5 if fup == "exact_time"
-        else 2.5 if fup == "offer"
+        5 if (
+            followup_type == "exact_time"
+            or followup_attempts_count >= 2
+            or (
+                meta.get("call_completion_status") == "🟢 (слухавку поклав клієнт)"
+                and f.get("client_hung_up_interrupted")
+            )
+        )
+        else 2.5 if followup_type == "offer"
         else 0
     )
 
     # ---------------- Бонус ----------------
-    if not f.get("bonus_offered"):
+    if is_driving_or_no_phone:
+        s["Пропозиція бонусу"] = 10
+    elif not f.get("bonus_offered"):
         s["Пропозиція бонусу"] = 0
     else:
         bonus_conditions = sum([
@@ -797,15 +854,18 @@ def score_call(f, meta, dialogue=None):
             bool(f.get("bonus_has_duration")),
             bool(f.get("bonus_has_value"))
         ])
-        s["Пропозиція бонусу"] = 10 if bonus_conditions >= 2 else 5
+        if bonus_conditions <= 0:
+            s["Пропозиція бонусу"] = 0
+        else:
+            s["Пропозиція бонусу"] = 10 if bonus_conditions >= 2 else 5
 
     # ---------------- Завершення ----------------
     s["Завершення розмови"] = 5 if f.get("has_farewell") else 0
 
     # ---------------- Передзвон ----------------
     repeat = meta["repeat_call"]
-    
-    if fup in ["none", "offer", "exact_time"]:
+
+    if followup_type == "none":
         s["Передзвон клієнту"] = 15
     else:
         s["Передзвон клієнту"] = (
@@ -816,7 +876,7 @@ def score_call(f, meta, dialogue=None):
 
     # ---------------- Не додумувати ----------------
     if f.get("assumption_made"):
-        s["Не додумувати"] = 2.5
+        s["Не додумувати"] = 0
     else:
         s["Не додумувати"] = 5
 
@@ -829,7 +889,9 @@ def score_call(f, meta, dialogue=None):
         s["Якість мовлення"] = 0
 
     # ---------------- Професіоналізм ----------------
-    if f.get("forbidden_words_used"):
+    if f.get("forbidden_words_used") or (
+        f.get("client_not_actual_client") and f.get("manager_shared_bonus_with_third_party")
+    ):
         s["Професіоналізм"] = 0
     else:
         s["Професіоналізм"] = (
@@ -837,25 +899,23 @@ def score_call(f, meta, dialogue=None):
         )
 
     # ---------------- Картка ----------------
-    match = f.get("comment_match_level", "none")
-    complete = f.get("comment_complete", False)
-
-    if match == "none":
-        s["Оформлення картки"] = 0
-    elif not complete:
-        s["Оформлення картки"] = 2.5
-    else:
-        s["Оформлення картки"] = 5
+    card_elements = sum([
+        bool(f.get("card_has_reason")),
+        bool(f.get("card_has_followup_time")),
+    ])
+    s["Оформлення картки"] = 5 if card_elements == 2 else 2.5 if card_elements == 1 else 0
 
     # ---------------- Утримання ----------------
     lvl = f.get("continuation_level", "none")
 
-    if not f.get("client_wants_to_end"):
+    if is_military_client:
+        s["Утримання клієнта"] = 20
+    elif not f.get("client_wants_to_end"):
         behavior = f.get("continuation_behavior", "neutral")
         s["Утримання клієнта"] = (
             20 if behavior == "active"
             else 15 if behavior == "neutral"
-            else 10 if behavior == "passive"
+            else 0 if behavior == "passive"
             else 0
         )
     else:
@@ -867,7 +927,9 @@ def score_call(f, meta, dialogue=None):
         )
 
     # ---------------- Заперечення ----------------
-    if not f.get("objection_detected"):
+    if is_military_client:
+        s["Робота із запереченнями"] = 10
+    elif not f.get("objection_detected"):
         s["Робота із запереченнями"] = 10
     else:
         s["Робота із запереченнями"] = (
@@ -875,6 +937,22 @@ def score_call(f, meta, dialogue=None):
             else 5 if lvl in {"weak", "formal"}
             else 0
         )
+
+    if unethical_client_behavior and not manager_unethical_response:
+        return {
+            "Встановлення контакту": 7.5,
+            "Спроба презентації": 5,
+            "Домовленість про наступний контакт": 5,
+            "Пропозиція бонусу": 10,
+            "Завершення розмови": 5,
+            "Передзвон клієнту": 15,
+            "Не додумувати": 5,
+            "Якість мовлення": 2.5,
+            "Професіоналізм": 10,
+            "Оформлення картки": 5,
+            "Утримання клієнта": 20,
+            "Робота із запереченнями": 10,
+        }
 
     return apply_call_completion_rules(s, f, meta)
 
@@ -913,7 +991,11 @@ def build_readable_qa_comment(features, scores, call):
         lines.append("Спроба презентації: презентації продукту не було; інформація лише про бонус не рахується як презентація.")
 
     followup_type = features.get("followup_type", "none")
-    if followup_type == "exact_time":
+    if features.get("client_hung_up_interrupted"):
+        lines.append("Домовленість про наступний контакт: клієнт завершив дзвінок завчасно, тому критерій зараховано за винятком.")
+    elif int(features.get("followup_attempts_count") or 0) >= 2:
+        lines.append("Домовленість про наступний контакт: менеджер зробив щонайменше дві окремі спроби домовитися про контакт, але клієнт не дав конкретики.")
+    elif followup_type == "exact_time":
         lines.append("Домовленість про наступний контакт: узгоджено конкретний час наступного дзвінка.")
     elif followup_type == "offer":
         lines.append("Домовленість про наступний контакт: передзвон запропоновано, але без узгодженого точного часу.")
@@ -953,7 +1035,7 @@ def build_readable_qa_comment(features, scores, call):
         lines.append("Передзвон клієнту: потрібного передзвону не було, тому критерій не виконано.")
 
     if features.get("assumption_made"):
-        lines.append("Не додумувати: менеджер припускав або додумував інформацію замість опори на факти з діалогу.")
+        lines.append("Не додумувати: менеджер припускав стан або намір клієнта без прямого підтвердження, тому критерій провалено.")
     else:
         lines.append("Не додумувати: менеджер не додумував зайвого і тримався фактів розмови.")
 
@@ -977,13 +1059,16 @@ def build_readable_qa_comment(features, scores, call):
     else:
         lines.append("Професіоналізм: заборонених слів зі списку не виявлено.")
 
-    comment_match_level = features.get("comment_match_level", "none")
-    if comment_match_level == "full" and features.get("comment_complete"):
-        lines.append("Оформлення картки: коментар у картці відповідає змісту дзвінка і містить ключову інформацію.")
-    elif comment_match_level == "partial":
-        lines.append("Оформлення картки: коментар у картці неповний або не повністю відповідає змісту розмови.")
+    card_elements = sum([
+        bool(features.get("card_has_reason")),
+        bool(features.get("card_has_followup_time")),
+    ])
+    if card_elements == 2:
+        lines.append("Оформлення картки: у коментарі є причина незавершеної розмови та час наступного контакту.")
+    elif card_elements == 1:
+        lines.append("Оформлення картки: у коментарі є лише один з обов'язкових елементів: причина або час наступного контакту.")
     else:
-        lines.append("Оформлення картки: коментар у картці відсутній або не відображає результат дзвінка.")
+        lines.append("Оформлення картки: у коментарі немає ані причини незавершеної розмови, ані часу наступного контакту.")
 
     if not features.get("objection_detected"):
         lines.append("Робота із запереченнями: заперечень від клієнта не було.")
@@ -1058,12 +1143,19 @@ def apply_call_completion_rules(scores, features, meta):
     client_negative = bool(features.get("client_negative"))
     client_used_profanity = bool(features.get("client_used_profanity"))
     manager_hung_up_early = bool(features.get("manager_hung_up_before_client_finished"))
+    interrupted_client_hangup = bool(features.get("client_hung_up_interrupted"))
 
     if logical_completion and has_farewell:
+        if has_followup and not has_any_repeat:
+            scores["Передзвон клієнту"] = 0
         return scores
 
     if status == "🟢 (слухавку поклав клієнт)":
         scores["Завершення розмови"] = 5
+        if interrupted_client_hangup:
+            scores["Домовленість про наступний контакт"] = 5
+            if not has_any_repeat:
+                scores["Передзвон клієнту"] = 0
 
         if (
             not logical_completion
@@ -1101,6 +1193,9 @@ def apply_call_completion_rules(scores, features, meta):
         if not logical_completion and not has_any_repeat:
             scores["Передзвон клієнту"] = 0
             return scores
+
+    if has_followup and not has_any_repeat:
+        scores["Передзвон клієнту"] = 0
 
     return scores
 
