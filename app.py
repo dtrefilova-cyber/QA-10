@@ -790,6 +790,11 @@ def score_call(f, meta, dialogue=None):
             "Робота із запереченнями": 0
         }
 
+    # Обмежений діалог (клієнт зайнятий/за кермом/просить передзвонити тощо):
+    # за правилами промпта не занижуємо за відсутність презентації/аргументації
+    # та не штрафуємо за відсутність утримання.
+    limited_dialogue = bool(f.get("is_limited_dialogue"))
+
     # ---------------- Контакт ----------------
     elements = sum([
         f["manager_name_present"],
@@ -829,6 +834,9 @@ def score_call(f, meta, dialogue=None):
         s["Спроба презентації"] = 2.5
     else:
         s["Спроба презентації"] = 0
+
+    if limited_dialogue:
+        s["Спроба презентації"] = 5
 
     # ---------------- Домовленість ----------------
     s["Домовленість про наступний контакт"] = (
@@ -911,6 +919,8 @@ def score_call(f, meta, dialogue=None):
 
     if is_military_client:
         s["Утримання клієнта"] = 20
+    elif limited_dialogue:
+        s["Утримання клієнта"] = 20
     elif not f.get("client_wants_to_end"):
         behavior = f.get("continuation_behavior", "neutral")
         s["Утримання клієнта"] = (
@@ -929,6 +939,8 @@ def score_call(f, meta, dialogue=None):
 
     # ---------------- Заперечення ----------------
     if is_military_client:
+        s["Робота із запереченнями"] = 10
+    elif limited_dialogue:
         s["Робота із запереченнями"] = 10
     elif not f.get("objection_detected"):
         s["Робота із запереченнями"] = 10
