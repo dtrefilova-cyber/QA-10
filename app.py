@@ -333,8 +333,9 @@ def apply_replacements(text, replacements):
         return text
 
     for k, v in replacements.items():
-        pattern = re.compile(rf"{re.escape(k)}", re.IGNORECASE)
-        text = pattern.sub(v, text)
+        pattern = re.compile(rf"(?<!\w){re.escape(k)}(?!\w)", re.IGNORECASE)
+        if pattern.search(text):
+            text = pattern.sub(v, text)
 
     return text
 
