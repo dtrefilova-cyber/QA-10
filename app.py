@@ -1474,17 +1474,15 @@ def build_readable_qa_comment(features, scores, call):
 
 
 def use_test_project_scores_sheet(call):
-    return (
-        call.get("project") == "ТЕСТ"
-        and call.get("ret_manager") in {"Жарікова Анастасія", "Бурий Андрій"}
-    )
+    project = str(call.get("project") or "").strip().upper()
+    return project == "TEST"
 
 
 def get_manager_sheet_settings(call):
     if use_test_project_scores_sheet(call):
         return {
-            "worksheet_name": "Оцінки",
-            "start_column": 4,
+            "worksheet_name": "AI",
+            "start_column": 1,
             "scores_start_row": 1,
             "criteria_start_row": 5,
             "log_start_row": 20,
@@ -1680,7 +1678,7 @@ if run_openai or run_claude:
                     else:
                         st.success(
                             f"Оцінки записано у таблицю менеджера `{call['ret_manager']}` "
-                            f"(sheet id: {call['ret_sheet_id']})"
+                            f"(sheet id: {call['ret_sheet_id']}, аркуш: {sheet_settings['worksheet_name']})"
                         )
                 except Exception as e:
                     st.error(f"Google error [scores write]: {e}")
