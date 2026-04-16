@@ -462,7 +462,8 @@ def normalize_presentation_level(features, dialogue, kb_data):
     bonus_only = has_bonus_word and not (has_product_mention or has_loyalty_mention)
     if bonus_only:
         features["presentation_level"] = "none"
-        return features
+        has_location = False
+        has_sent_info = False
 
     if has_product_mention or has_loyalty_mention or has_location or has_sent_info:
         if has_location and (has_product_mention or has_loyalty_mention):
