@@ -196,8 +196,11 @@ def write_to_google_sheet(sheet, meta, scores, start_column=1, start_row=1, crit
                 row = criteria_start_row + (CRITERIA_ROWS[key] - 5)
                 updates.append((f"{col_letter}{row}", format_score_sheet(value)))
 
-        for cell, val in updates:
-            sheet.update(cell, [[val]])
+        if updates:
+            sheet.batch_update(
+                [{"range": cell, "values": [[val]]} for cell, val in updates],
+                value_input_option="RAW",
+            )
 
         return True
     except Exception as e:
@@ -206,55 +209,64 @@ def write_to_google_sheet(sheet, meta, scores, start_column=1, start_row=1, crit
 
 def append_manager_log(sheet, call, comment, total_score, ai_label, start_row=20):
     """Додає підсумок перевірки в таблицю менеджера з рядка 20."""
-    row_index = find_next_row(sheet, start_row=start_row, key_column=1)
-    values = [[
-        call.get("client_id", ""),
-        comment,
-        total_score,
-        call.get("call_date", ""),
-        call.get("check_date", ""),
-        ai_label,
-        call.get("call_completion_status", ""),
-    ]]
-    sheet.update(f"A{row_index}:G{row_index}", values, value_input_option="RAW")
-    return row_index
+    try:
+        row_index = find_next_row(sheet, start_row=start_row, key_column=1)
+        values = [[
+            call.get("client_id", ""),
+            comment,
+            total_score,
+            call.get("call_date", ""),
+            call.get("check_date", ""),
+            ai_label,
+            call.get("call_completion_status", ""),
+        ]]
+        sheet.update(f"A{row_index}:G{row_index}", values, value_input_option="RAW")
+        return row_index
+    except Exception as e:
+        return str(e)
 
 
 def append_qa_log(sheet, call, transcript, clean_dialogue, comment, total_score):
     """Додає лог перевірки у QA_LOG_CALLS / Лист 1."""
-    row_index = find_next_row(sheet, start_row=1, key_column=1)
-    values = [[
-        call.get("check_date", ""),
-        call.get("client_id", ""),
-        call.get("project", ""),
-        call.get("qa_manager", ""),
-        call.get("url", ""),
-        transcript,
-        clean_dialogue,
-        comment,
-        total_score,
-        call.get("call_completion_status", ""),
-    ]]
-    sheet.update(f"A{row_index}:J{row_index}", values, value_input_option="RAW")
-    return row_index
+    try:
+        row_index = find_next_row(sheet, start_row=1, key_column=1)
+        values = [[
+            call.get("check_date", ""),
+            call.get("client_id", ""),
+            call.get("project", ""),
+            call.get("qa_manager", ""),
+            call.get("url", ""),
+            transcript,
+            clean_dialogue,
+            comment,
+            total_score,
+            call.get("call_completion_status", ""),
+        ]]
+        sheet.update(f"A{row_index}:J{row_index}", values, value_input_option="RAW")
+        return row_index
+    except Exception as e:
+        return str(e)
 
 
 def append_log_info(sheet, call):
     """Додає в LOG_INFO всі значення, які ввели у форму вручну."""
-    row_index = find_next_row(sheet, start_row=1, key_column=1)
-    values = [[
-        call.get("check_date", ""),
-        call.get("qa_manager", ""),
-        call.get("project", ""),
-        call.get("ret_manager", ""),
-        call.get("ret_sheet_id", ""),
-        call.get("client_id", ""),
-        call.get("call_date", ""),
-        call.get("url", ""),
-        call.get("bonus_check", ""),
-        call.get("repeat_call", ""),
-        call.get("call_completion_status", ""),
-        call.get("manager_comment", ""),
-    ]]
-    sheet.update(f"A{row_index}:L{row_index}", values, value_input_option="RAW")
-    return row_index
+    try:
+        row_index = find_next_row(sheet, start_row=1, key_column=1)
+        values = [[
+            call.get("check_date", ""),
+            call.get("qa_manager", ""),
+            call.get("project", ""),
+            call.get("ret_manager", ""),
+            call.get("ret_sheet_id", ""),
+            call.get("client_id", ""),
+            call.get("call_date", ""),
+            call.get("url", ""),
+            call.get("bonus_check", ""),
+            call.get("repeat_call", ""),
+            call.get("call_completion_status", ""),
+            call.get("manager_comment", ""),
+        ]]
+        sheet.update(f"A{row_index}:L{row_index}", values, value_input_option="RAW")
+        return row_index
+    except Exception as e:
+        return str(e)
