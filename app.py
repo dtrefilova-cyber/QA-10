@@ -32,7 +32,7 @@ claude_client = anthropic.Anthropic(
 LOG_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 DICT_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 KB_SHEET_ID = "1yZbtao1P1Xa0r6ZJAnjkJWikxcWQ90XbXvaT7EWQKeU"
-ANALYSIS_CACHE_VERSION = "2026-04-16-2"
+ANALYSIS_CACHE_VERSION = "2026-04-16-3"
 
 # ================= HEADER =================
 st.markdown("""
@@ -717,9 +717,12 @@ def validate_bonus_features(features, dialogue):
         "буде бонус",
         "будуть бонуси",
         "залишу бонус",
+        "залишаю бонус",
         "бонус залишу",
         "доступний бонус",
         "бонус від менеджера",
+        "від себе бонус",
+        "від себе залишаю бонус",
         "подарую бонус",
         "отримаєте бонус",
         "отримаєш бонус",
@@ -738,6 +741,10 @@ def validate_bonus_features(features, dialogue):
         "бездеп",
         "фрібет",
         "від менеджера",
+        "від себе",
+        "захист став",
+        "захист ставки",
+        "захист ставці",
     ]
     duration_markers = [
         "годин",
@@ -762,6 +769,7 @@ def validate_bonus_features(features, dialogue):
         "поповнен",
         "вейдж",
         "відіграш",
+        "ставк",
     ]
 
     bonus_lines = [
@@ -786,11 +794,16 @@ def validate_bonus_features(features, dialogue):
         return features
 
     has_multiplier_value = re.search(r"(?<!\w)\d+\s*[xх](?!\w)", bonus_text) is not None
+    has_stake_range = re.search(r"став\w*\s+від\s+\S+\s+до\s+\S+", bonus_text) is not None
 
     features["bonus_offered"] = True
     features["bonus_has_type"] = has_any_marker(bonus_text, type_markers)
     features["bonus_has_duration"] = has_any_marker(bonus_text, duration_markers)
-    features["bonus_has_value"] = has_any_marker(bonus_text, value_markers) or has_multiplier_value
+    features["bonus_has_value"] = (
+        has_any_marker(bonus_text, value_markers)
+        or has_multiplier_value
+        or has_stake_range
+    )
     return features
 
 
