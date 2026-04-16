@@ -869,8 +869,10 @@ def validate_dialogue_exceptions(features, dialogue):
 
 def validate_objection_and_retention(features, dialogue):
     manager_lines, client_lines = extract_role_lines(dialogue)
-    manager_text = " ".join(manager_lines).lower()
-    client_text = " ".join(client_lines).lower()
+    manager_lines_lc = [line.lower() for line in manager_lines]
+    client_lines_lc = [line.lower() for line in client_lines]
+    manager_text = " ".join(manager_lines_lc)
+    client_text = " ".join(client_lines_lc)
 
     end_call_markers = [
         "не можу говорити",
@@ -911,11 +913,35 @@ def validate_objection_and_retention(features, dialogue):
         "о котрій",
         "коли буде зручно",
     ]
+    objection_argument_markers = [
+        "тому що",
+        "бо ",
+        "це дає",
+        "вигід",
+        "переваг",
+        "чому це корисно",
+        "сенс у тому",
+        "дозвольте пояснити",
+        "поясню коротко",
+    ]
+
+    def count_signal_lines(lines, markers):
+        total = 0
+        for line in lines:
+            if any(marker in line for marker in markers):
+                total += 1
+        return total
 
     client_wants_to_end = has_any_marker(client_text, end_call_markers)
     product_objection = has_any_marker(client_text, product_objection_markers)
+    end_signal_count = count_signal_lines(client_lines_lc, end_call_markers)
+    product_objection_count = count_signal_lines(client_lines_lc, product_objection_markers)
     real_retention = has_any_marker(manager_text, real_retention_markers)
     callback_only = has_any_marker(manager_text, callback_only_markers)
+    manager_argumented = (
+        has_any_marker(manager_text, real_retention_markers)
+        or has_any_marker(manager_text, objection_argument_markers)
+    )
     bonus_only = "бонус" in manager_text and not real_retention
 
     if client_wants_to_end:
@@ -949,6 +975,19 @@ def validate_objection_and_retention(features, dialogue):
     if features.get("objection_detected") and features.get("continuation_level") == "none":
         if features.get("client_hung_up_interrupted") or len(manager_lines) > 0:
             features["continuation_level"] = "weak"
+
+    # Якщо клієнт 2+ рази повторює заперечення і менеджер аргументує,
+    # для "Робота із запереченнями" потрібен максимум (через lvl=strong у score_call).
+    if product_objection_count >= 2 and manager_argumented:
+        features["objection_detected"] = True
+        if features.get("continuation_level") != "forced_end":
+            features["continuation_level"] = "strong"
+
+    # Якщо клієнт 2+ рази намагається завершити розмову,
+    # для "Утримання клієнта" застосовуємо максимум (через lvl=strong у score_call).
+    if end_signal_count >= 2 and features.get("client_wants_to_end"):
+        if features.get("continuation_level") != "forced_end":
+            features["continuation_level"] = "strong"
 
     return features
 
