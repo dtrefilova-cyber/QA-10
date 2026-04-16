@@ -395,7 +395,7 @@ def has_any_marker(text, markers):
     return any(marker in normalized for marker in markers)
 
 
-def features = normalize_presentation_level(features, dialogue, kb_data):
+def normalize_presentation_level(features, dialogue, kb_data):
     manager_lines, _ = extract_role_lines(dialogue)
     manager_text = " ".join(manager_lines).lower()
 
@@ -462,8 +462,7 @@ def features = normalize_presentation_level(features, dialogue, kb_data):
     bonus_only = has_bonus_word and not (has_product_mention or has_loyalty_mention)
     if bonus_only:
         features["presentation_level"] = "none"
-        has_location = False
-        has_sent_info = False
+        return features
 
     if has_product_mention or has_loyalty_mention or has_location or has_sent_info:
         if has_location and (has_product_mention or has_loyalty_mention):
@@ -808,6 +807,38 @@ def validate_professionalism_features(features, dialogue):
     if has_direct_client_communication or not has_clear_third_party_context:
         features["client_not_actual_client"] = False
 
+    return features
+
+
+def validate_dialogue_exceptions(features, dialogue):
+    _, client_lines = extract_role_lines(dialogue)
+    client_text = " ".join(client_lines).lower()
+
+    limited_dialogue_markers = [
+        "я зайнятий",
+        "я занята",
+        "не можу говорити",
+        "не можу зараз",
+        "мені незручно",
+        "немає часу говорити",
+        "передзвоніть",
+        "передзвони",
+        "зараз не можу",
+        "не до розмови",
+    ]
+    driving_markers = [
+        "за кермом",
+        "за рулем",
+        "без телефону",
+        "не можу взяти телефон",
+        "не можу користуватись телефоном",
+    ]
+
+    has_limited_dialogue = has_any_marker(client_text, limited_dialogue_markers)
+    has_driving_context = has_any_marker(client_text, driving_markers)
+
+    features["is_limited_dialogue"] = has_limited_dialogue or has_driving_context
+    features["client_driving_or_no_phone"] = has_driving_context
     return features
 
 
@@ -1594,6 +1625,7 @@ if run_openai or run_claude:
             features = analysis_result.get("features", {})
             features = normalize_presentation_level(features, clean_dialogue, kb_data)
             features = validate_bonus_features(features, clean_dialogue)
+            features = validate_dialogue_exceptions(features, clean_dialogue)
             features = validate_objection_and_retention(features, clean_dialogue)
             features = validate_professionalism_features(features, clean_dialogue)
             features = validate_forbidden_words(features, clean_dialogue)
@@ -1645,11 +1677,16 @@ if run_openai or run_claude:
                     st.write("WRITE RESULT:", res)
                     if res is not True:
                         st.error(f"Google error [scores write]: {res}")
+                    else:
+                        st.success(
+                            f"Оцінки записано у таблицю менеджера `{call['ret_manager']}` "
+                            f"(sheet id: {call['ret_sheet_id']})"
+                        )
                 except Exception as e:
                     st.error(f"Google error [scores write]: {e}")
 
                 try:
-                    append_manager_log(
+                    manager_log_res = append_manager_log(
                         scores_sheet,
                         call,
                         comment_for_sheet,
@@ -1657,6 +1694,8 @@ if run_openai or run_claude:
                         ai_label,
                         start_row=sheet_settings["log_start_row"],
                     )
+                    if isinstance(manager_log_res, str):
+                        st.error(f"Google error [manager log]: {manager_log_res}")
                 except Exception as e:
                     st.error(f"Google error [manager log]: {e}")
 
@@ -1670,7 +1709,7 @@ if run_openai or run_claude:
                     if log_workbook is None:
                         raise RuntimeError("Не вдалося відкрити QA_LOGS_CALLS")
                     log_sheet = log_workbook.worksheet("Лист 1")
-                    append_qa_log(
+                    qa_log_res = append_qa_log(
                         log_sheet,
                         call,
                         transcript,
@@ -1678,6 +1717,8 @@ if run_openai or run_claude:
                         comment,
                         total_score
                     )
+                    if isinstance(qa_log_res, str):
+                        st.error(f"Google error [QA log]: {qa_log_res}")
                 except Exception as e:
                     st.error(f"Google error [QA log]: {e}")
 
@@ -1685,10 +1726,12 @@ if run_openai or run_claude:
                     if log_workbook is None:
                         raise RuntimeError("Не вдалося відкрити QA_LOGS_CALLS")
                     log_info_sheet = log_workbook.worksheet("LOG_INFO")
-                    append_log_info(
+                    log_info_res = append_log_info(
                         log_info_sheet,
                         call,
                     )
+                    if isinstance(log_info_res, str):
+                        st.error(f"Google error [LOG_INFO]: {log_info_res}")
                 except Exception as e:
                     st.error(f"Google error [LOG_INFO]: {e}")
 
