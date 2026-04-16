@@ -749,14 +749,8 @@ def validate_bonus_features(features, dialogue):
         "поповнен",
         "вейдж",
         "відіграш",
-        "x",
         "х",
-        "на 700",
-        "на 1000",
-        "50",
-        "70",
-        "100",
-        "200",
+        "x",
     ]
 
     has_offer = has_any_marker(manager_text, offer_markers)
@@ -771,6 +765,13 @@ def validate_bonus_features(features, dialogue):
     features["bonus_has_type"] = has_any_marker(manager_text, type_markers)
     features["bonus_has_duration"] = has_any_marker(manager_text, duration_markers)
     features["bonus_has_value"] = has_any_marker(manager_text, value_markers)
+    return features
+
+
+def validate_card_features(features):
+    # Якщо домовленості про наступний контакт не було, час передзвону у коментарі не є обов'язковим.
+    if features.get("followup_type", "none") == "none" and features.get("card_has_reason"):
+        features["card_has_followup_time"] = True
     return features
 
 
@@ -1625,6 +1626,7 @@ if run_openai or run_claude:
             features = validate_bonus_features(features, clean_dialogue)
             features = validate_dialogue_exceptions(features, clean_dialogue)
             features = validate_objection_and_retention(features, clean_dialogue)
+            features = validate_card_features(features)
             features = validate_professionalism_features(features, clean_dialogue)
             features = validate_forbidden_words(features, clean_dialogue)
             features = validate_assumption_made(features, clean_dialogue)
