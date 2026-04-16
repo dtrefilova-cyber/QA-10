@@ -395,7 +395,7 @@ def has_any_marker(text, markers):
     return any(marker in normalized for marker in markers)
 
 
-def normalize_presentation_level(features, dialogue, kb_data):
+def features = normalize_presentation_level(features, dialogue, kb_data):
     manager_lines, _ = extract_role_lines(dialogue)
     manager_text = " ".join(manager_lines).lower()
 
