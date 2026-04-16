@@ -32,7 +32,7 @@ claude_client = anthropic.Anthropic(
 LOG_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 DICT_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 KB_SHEET_ID = "1yZbtao1P1Xa0r6ZJAnjkJWikxcWQ90XbXvaT7EWQKeU"
-ANALYSIS_CACHE_VERSION = "2026-04-16-1"
+ANALYSIS_CACHE_VERSION = "2026-04-16-2"
 
 # ================= HEADER =================
 st.markdown("""
@@ -694,11 +694,22 @@ def validate_assumption_made(features, dialogue):
 
 def validate_bonus_features(features, dialogue):
     manager_lines, _ = extract_role_lines(dialogue)
-    manager_text = " ".join(manager_lines).lower()
+    manager_lines_lc = [line.lower() for line in manager_lines]
+    manager_text = " ".join(manager_lines_lc)
 
     if not manager_text:
         return features
 
+    bonus_topic_markers = [
+        "бонус",
+        "фс",
+        "fs",
+        "фріспін",
+        "фриспін",
+        "кешбек",
+        "бездеп",
+        "фрібет",
+    ]
     offer_markers = [
         "нарах",
         "дам бонус",
@@ -753,7 +764,20 @@ def validate_bonus_features(features, dialogue):
         "x",
     ]
 
-    has_offer = has_any_marker(manager_text, offer_markers)
+    bonus_lines = [
+        line for line in manager_lines_lc
+        if has_any_marker(line, bonus_topic_markers)
+    ]
+    bonus_text = " ".join(bonus_lines)
+
+    if not bonus_text:
+        features["bonus_offered"] = False
+        features["bonus_has_type"] = False
+        features["bonus_has_duration"] = False
+        features["bonus_has_value"] = False
+        return features
+
+    has_offer = has_any_marker(bonus_text, offer_markers)
     if not has_offer:
         features["bonus_offered"] = False
         features["bonus_has_type"] = False
@@ -762,9 +786,9 @@ def validate_bonus_features(features, dialogue):
         return features
 
     features["bonus_offered"] = True
-    features["bonus_has_type"] = has_any_marker(manager_text, type_markers)
-    features["bonus_has_duration"] = has_any_marker(manager_text, duration_markers)
-    features["bonus_has_value"] = has_any_marker(manager_text, value_markers)
+    features["bonus_has_type"] = has_any_marker(bonus_text, type_markers)
+    features["bonus_has_duration"] = has_any_marker(bonus_text, duration_markers)
+    features["bonus_has_value"] = has_any_marker(bonus_text, value_markers)
     return features
 
 
