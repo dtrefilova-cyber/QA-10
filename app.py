@@ -711,17 +711,19 @@ def validate_bonus_features(features, dialogue):
         "фрібет",
     ]
     offer_markers = [
-        "нарах",
+        "нарахую бонус",
+        "нараховано бонус",
         "дам бонус",
         "буде бонус",
-        "будуть бонус",
-        "залиш",
-        "доступн",
-        "від менеджера",
-        "подарую",
-        "отримаєте",
-        "отримаєш",
-        "можу дати",
+        "будуть бонуси",
+        "залишу бонус",
+        "бонус залишу",
+        "доступний бонус",
+        "бонус від менеджера",
+        "подарую бонус",
+        "отримаєте бонус",
+        "отримаєш бонус",
+        "можу дати бонус",
     ]
     type_markers = [
         "фс",
@@ -760,8 +762,6 @@ def validate_bonus_features(features, dialogue):
         "поповнен",
         "вейдж",
         "відіграш",
-        "х",
-        "x",
     ]
 
     bonus_lines = [
@@ -785,10 +785,12 @@ def validate_bonus_features(features, dialogue):
         features["bonus_has_value"] = False
         return features
 
+    has_multiplier_value = re.search(r"(?<!\w)\d+\s*[xх](?!\w)", bonus_text) is not None
+
     features["bonus_offered"] = True
     features["bonus_has_type"] = has_any_marker(bonus_text, type_markers)
     features["bonus_has_duration"] = has_any_marker(bonus_text, duration_markers)
-    features["bonus_has_value"] = has_any_marker(bonus_text, value_markers)
+    features["bonus_has_value"] = has_any_marker(bonus_text, value_markers) or has_multiplier_value
     return features
 
 
