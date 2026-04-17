@@ -928,6 +928,14 @@ def validate_objection_and_retention(features, dialogue):
         "о котрій",
         "коли буде зручно",
     ]
+    short_talk_markers = [
+        "маєте пару хвилин",
+        "є пару хвилин",
+        "є хвилинка",
+        "можна хвилинку",
+        "можна 30 секунд",
+        "є 30 секунд",
+    ]
     objection_argument_markers = [
         "тому що",
         "бо ",
@@ -951,7 +959,7 @@ def validate_objection_and_retention(features, dialogue):
     product_objection = has_any_marker(client_text, product_objection_markers)
     end_signal_count = count_signal_lines(client_lines_lc, end_call_markers)
     product_objection_count = count_signal_lines(client_lines_lc, product_objection_markers)
-    real_retention = has_any_marker(manager_text, real_retention_markers)
+    real_retention = has_any_marker(manager_text, real_retention_markers) or has_any_marker(manager_text, short_talk_markers)
     callback_only = has_any_marker(manager_text, callback_only_markers)
     manager_argumented = (
         has_any_marker(manager_text, real_retention_markers)
@@ -999,12 +1007,44 @@ def validate_objection_and_retention(features, dialogue):
             features["continuation_level"] = "strong"
 
     # Якщо клієнт 2+ рази намагається завершити розмову,
-    # для "Утримання клієнта" застосовуємо максимум (через lvl=strong у score_call).
-    if end_signal_count >= 2 and features.get("client_wants_to_end"):
+    # максимум за "Утримання клієнта" можливий тільки коли була хоча б 1 реальна спроба втримання.
+    if end_signal_count >= 2 and features.get("client_wants_to_end") and real_retention:
         if features.get("continuation_level") != "forced_end":
             features["continuation_level"] = "strong"
 
     return features
+
+
+def comment_mentions_military_service(comment):
+    text = str(comment or "").lower()
+    if not text.strip():
+        return False
+
+    military_markers = [
+        "військов",
+        "всу",
+        "зсу",
+        "служ",
+        "на службі",
+        "на службе",
+        "военн",
+        "арм",
+        "мобіліз",
+    ]
+    negative_markers = [
+        "не військов",
+        "не военн",
+        "не служ",
+        "не в зсу",
+        "не у зсу",
+        "не в всу",
+        "не у всу",
+    ]
+
+    if any(marker in text for marker in negative_markers):
+        return False
+
+    return any(marker in text for marker in military_markers)
 
 
 def get_analysis_output_schema():
@@ -1088,7 +1128,8 @@ ANALYSIS
 - якщо `presentation_level` не `none`, коментар про презентацію має це відображати
 - бонус сам по собі не є презентацією
 - слово "бонус" без реальних умов не робить `bonus_has_type`, `bonus_has_duration`, `bonus_has_value` істинними
-- домовленість про передзвін, питання про час і проста згадка бонусу не є утриманням
+- проста домовленість про передзвін, технічне питання про час передзвону і проста згадка бонусу не є утриманням
+- питання менеджера про можливість короткої розмови ("чи маєте пару хвилин?", "можна 30 секунд?") після сигналу завершення — це спроба утримання (мінімум `weak`)
 - якщо є лише одна спроба утримання, не пиши про кілька спроб
 - "не хочу говорити" / "я зайнятий" / "передзвоніть" = утримання, не заперечення
 - "не хочу продукт / гру / бонус" = заперечення
@@ -1200,7 +1241,7 @@ def score_call(f, meta, dialogue=None):
     noise_reaction = f.get("noise_reaction", "none")
     followup_type = f.get("followup_type", "none")
     followup_attempts_count = int(f.get("followup_attempts_count") or 0)
-    is_military_client = bool(f.get("client_military"))
+    is_military_client = comment_mentions_military_service(meta.get("manager_comment", ""))
     is_driving_or_no_phone = bool(f.get("client_driving_or_no_phone"))
     unethical_client_behavior = bool(f.get("client_unethical_behavior"))
     manager_unethical_response = bool(f.get("manager_unethical_response"))
@@ -1271,21 +1312,32 @@ def score_call(f, meta, dialogue=None):
         s["Спроба презентації"] = 5
 
     # ---------------- Домовленість ----------------
-    s["Домовленість про наступний контакт"] = (
-        5 if (
-            followup_type == "exact_time"
-            or followup_attempts_count >= 2
-            or (
-                meta.get("call_completion_status") == "🟢 (слухавку поклав клієнт)"
-                and f.get("client_hung_up_interrupted")
-            )
+    # Без підтвердженої згоди клієнта на наступний контакт не даємо максимум:
+    # 2+ спроби менеджера або обрив з боку клієнта = часткове виконання.
+    has_partial_followup_signal = (
+        followup_type == "offer"
+        or followup_attempts_count >= 2
+        or (
+            meta.get("call_completion_status") == "🟢 (слухавку поклав клієнт)"
+            and f.get("client_hung_up_interrupted")
         )
-        else 2.5 if followup_type == "offer"
+    )
+    s["Домовленість про наступний контакт"] = (
+        5 if followup_type == "exact_time"
+        else 2.5 if has_partial_followup_signal
         else 0
     )
 
     # ---------------- Бонус ----------------
+    # Якщо клієнт поклав слухавку під час етапу з бонусом, критерій бонусу зараховуємо на максимум.
+    client_hung_up_on_bonus_stage = (
+        meta.get("call_completion_status") == "🟢 (слухавку поклав клієнт)"
+        and not f.get("conversation_logically_completed")
+        and f.get("bonus_offered")
+    )
     if is_driving_or_no_phone:
+        s["Пропозиція бонусу"] = 10
+    elif client_hung_up_on_bonus_stage:
         s["Пропозиція бонусу"] = 10
     elif not f.get("bonus_offered"):
         s["Пропозиція бонусу"] = 0
@@ -1439,9 +1491,9 @@ def build_readable_qa_comment(features, scores, call):
 
     followup_type = features.get("followup_type", "none")
     if features.get("client_hung_up_interrupted"):
-        lines.append("Домовленість про наступний контакт: клієнт завершив дзвінок завчасно, тому критерій зараховано за винятком.")
+        lines.append("Домовленість про наступний контакт: клієнт завершив дзвінок завчасно, тож за відсутності підтвердженої згоди критерій зараховано частково.")
     elif int(features.get("followup_attempts_count") or 0) >= 2:
-        lines.append("Домовленість про наступний контакт: менеджер зробив щонайменше дві окремі спроби домовитися про контакт, але клієнт не дав конкретики.")
+        lines.append("Домовленість про наступний контакт: менеджер зробив щонайменше дві спроби домовитися, але без підтвердженої згоди клієнта критерій зараховано частково.")
     elif followup_type == "exact_time":
         lines.append("Домовленість про наступний контакт: узгоджено конкретний час наступного дзвінка.")
     elif followup_type == "offer":
@@ -1449,8 +1501,15 @@ def build_readable_qa_comment(features, scores, call):
     else:
         lines.append("Домовленість про наступний контакт: домовленості про наступний дзвінок не було.")
 
+    bonus_auto_due_client_hangup = (
+        call.get("call_completion_status") == "🟢 (слухавку поклав клієнт)"
+        and not features.get("conversation_logically_completed")
+        and features.get("bonus_offered")
+    )
     if not features.get("bonus_offered"):
         lines.append("Пропозиція бонусу: бонус клієнту не озвучено.")
+    elif bonus_auto_due_client_hangup:
+        lines.append("Пропозиція бонусу: клієнт завершив дзвінок на етапі бонусу, тому критерій зараховано на максимум за винятком.")
     else:
         bonus_details = []
         if features.get("bonus_has_type"):
@@ -1467,6 +1526,8 @@ def build_readable_qa_comment(features, scores, call):
 
     if features.get("has_farewell"):
         lines.append("Завершення розмови: розмову завершено з прощанням.")
+    elif call.get("call_completion_status") == "🟢 (слухавку поклав клієнт)":
+        lines.append("Завершення розмови: клієнт завершив дзвінок, тому критерій зараховано автоматично.")
     else:
         lines.append("Завершення розмови: прощання наприкінці розмови відсутнє.")
 
@@ -1557,7 +1618,23 @@ def use_test_project_scores_sheet(call):
     return project == "TEST"
 
 
+def use_test_ret_manager_custom_layout(call):
+    project = str(call.get("project") or "").strip().upper()
+    manager = str(call.get("ret_manager") or "").strip().lower()
+    supported_managers = {"бурий андрій", "жарікова анастасія"}
+    return project in {"TEST", "ТЕСТ"} and manager in supported_managers
+
+
 def get_manager_sheet_settings(call):
+    if use_test_ret_manager_custom_layout(call):
+        return {
+            "worksheet_name": "Оцінки",
+            "start_column": 4,
+            "scores_start_row": 1,
+            "criteria_start_row": 5,
+            "log_start_row": 20,
+        }
+
     if use_test_project_scores_sheet(call):
         return {
             "worksheet_name": "AI",
@@ -1600,7 +1677,8 @@ def apply_call_completion_rules(scores, features, meta):
     if status == "🟢 (слухавку поклав клієнт)":
         scores["Завершення розмови"] = 5
         if interrupted_client_hangup:
-            scores["Домовленість про наступний контакт"] = 5
+            if scores.get("Домовленість про наступний контакт", 0) > 2.5:
+                scores["Домовленість про наступний контакт"] = 2.5
             if not has_any_repeat:
                 scores["Передзвон клієнту"] = 0
 
