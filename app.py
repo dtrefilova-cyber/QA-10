@@ -14,7 +14,7 @@ from google_sheets import (
 from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
-from prompts import get_full_analysis_prompt, get_qa_comment_prompt
+from prompts import get_full_analysis_prompt
 from prompts import get_full_analysis_prompt_claude, get_full_analysis_prompt_openai
 import anthropic
 
@@ -32,7 +32,10 @@ claude_client = anthropic.Anthropic(
 LOG_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 DICT_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 KB_SHEET_ID = "1yZbtao1P1Xa0r6ZJAnjkJWikxcWQ90XbXvaT7EWQKeU"
-ANALYSIS_CACHE_VERSION = "2026-04-16-3"
+ANALYSIS_CACHE_VERSION = "2026-04-17-1"
+OPENAI_ANALYSIS_MODEL = st.secrets.get("OPENAI_MODEL", "gpt-5.4-mini")
+OPENAI_MAX_OUTPUT_TOKENS = int(st.secrets.get("OPENAI_MAX_OUTPUT_TOKENS", 2200))
+CLAUDE_MAX_OUTPUT_TOKENS = int(st.secrets.get("CLAUDE_MAX_OUTPUT_TOKENS", 2200))
 
 # ================= HEADER =================
 st.markdown("""
@@ -487,11 +490,6 @@ def build_kb_context(kb_data):
     for row in kb_data:
         name = str(row.get("NAME", "")).strip()
         aliases = str(row.get("ALIASES", "")).strip()
-        description = str(
-            row.get("DESCRIPTION", "")
-            or row.get("INFO", "")
-            or row.get("COMMENT", "")
-        ).strip()
 
         if not name:
             continue
@@ -499,8 +497,6 @@ def build_kb_context(kb_data):
         parts = [f"Продукт: {name}"]
         if aliases:
             parts.append(f"Аліаси: {aliases}")
-        if description:
-            parts.append(f"Опис: {description}")
 
         lines.append(" | ".join(parts))
 
@@ -589,13 +585,6 @@ def apply_defaults(features):
         features.setdefault(k, v)
 
     return features
-
-
-def build_dictionary_context(replacements):
-    if not replacements:
-        return "Словник замін не переданий."
-
-    return "\n".join([f"{k} → {v}" for k, v in replacements.items()])
 
 
 def normalize_forbidden_phrase(text):
@@ -1052,7 +1041,6 @@ def get_analysis_output_schema():
 Поверни ONLY valid JSON такого формату:
 {
   "cleaned_transcript": "очищений діалог",
-  "qa_comment": "готовий QA-коментар по критеріях, кожен критерій з нового рядка",
     "features": {
     "manager_name_present": boolean,
     "manager_position_present": boolean,
@@ -1102,30 +1090,15 @@ def get_analysis_output_schema():
 
 
 def build_combined_analysis_prompt(prompt_body, raw_dialogue, replacements):
-    dictionary_context = build_dictionary_context(replacements)
+    _ = replacements
     return f"""
 {prompt_body}
 
----------------------
-CLEAN
----------------------
-
-- очисти транскрипт без зміни сенсу
-- застосуй словник замін
-- не скорочуй текст
-- заміни ch_0 на "Менеджер", ch_1 на "Клієнт"
-- словник використовуй тільки для очистки, не для оцінювання
-
-{dictionary_context}
-
----------------------
 ANALYSIS
 ---------------------
 
-- аналізуй тільки очищений транскрипт
-- поверни тільки `features`, `cleaned_transcript` і `qa_comment`
-- `qa_comment` формуй лише з фактів і значень `features`, без загального враження
-- якщо `presentation_level` не `none`, коментар про презентацію має це відображати
+- аналізуй транскрипт як є (він уже очищений локально)
+- поверни тільки `features` і `cleaned_transcript`
 - бонус сам по собі не є презентацією
 - слово "бонус" без реальних умов не робить `bonus_has_type`, `bonus_has_duration`, `bonus_has_value` істинними
 - проста домовленість про передзвін, технічне питання про час передзвону і проста згадка бонусу не є утриманням
@@ -1157,7 +1130,6 @@ def parse_analysis_response(text):
 
     return {
         "cleaned_transcript": (payload.get("cleaned_transcript") or "").strip(),
-        "qa_comment": (payload.get("qa_comment") or "").strip(),
         "features": features,
     }
 
@@ -1171,21 +1143,31 @@ def extract_features_openai(dialogue, comment, kb_context="", replacements=None)
 
     prompt = build_combined_analysis_prompt(base_prompt, dialogue, replacements or {})
 
-    try:
-        res = client.chat.completions.create(
-            model="gpt-5.4",
-            temperature=0,
-            messages=[
-                {"role": "system", "content": "Return only valid JSON."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        parsed = parse_analysis_response(res.choices[0].message.content)
-        return parsed or {}
+    max_output_tokens = OPENAI_MAX_OUTPUT_TOKENS
+    last_error = None
 
-    except Exception as e:
-        st.error(f"GPT error: {e}")
-        return {}
+    for _attempt in range(2):
+        try:
+            res = client.chat.completions.create(
+                model=OPENAI_ANALYSIS_MODEL,
+                temperature=0,
+                max_completion_tokens=max_output_tokens,
+                messages=[
+                    {"role": "system", "content": "Return only valid JSON."},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            parsed = parse_analysis_response(res.choices[0].message.content)
+            if parsed:
+                return parsed
+            last_error = "empty or invalid JSON"
+        except Exception as e:
+            last_error = str(e)
+
+        max_output_tokens = int(max_output_tokens * 1.6)
+
+    st.error(f"GPT error: {last_error}")
+    return {}
 
 
 def extract_features_claude(dialogue, comment, kb_context="", replacements=None):
@@ -1197,24 +1179,33 @@ def extract_features_claude(dialogue, comment, kb_context="", replacements=None)
 
     prompt = build_combined_analysis_prompt(base_prompt, dialogue, replacements or {})
 
-    try:
-        response = claude_client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2000,
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"Return ONLY valid JSON.\n{prompt}"
-                }
-            ]
-        )
+    max_output_tokens = CLAUDE_MAX_OUTPUT_TOKENS
+    last_error = None
 
-        parsed = parse_analysis_response(response.content[0].text)
-        return parsed or {}
+    for _attempt in range(2):
+        try:
+            response = claude_client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=max_output_tokens,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"Return ONLY valid JSON.\n{prompt}"
+                    }
+                ]
+            )
 
-    except Exception as e:
-        st.error(f"Claude error: {e}")
-        return {}
+            parsed = parse_analysis_response(response.content[0].text)
+            if parsed:
+                return parsed
+            last_error = "empty or invalid JSON"
+        except Exception as e:
+            last_error = str(e)
+
+        max_output_tokens = int(max_output_tokens * 1.6)
+
+    st.error(f"Claude error: {last_error}")
+    return {}
 
 
 @st.cache_data(show_spinner=False)
@@ -1786,8 +1777,6 @@ if run_openai or run_claude:
             features = validate_professionalism_features(features, clean_dialogue)
             features = validate_forbidden_words(features, clean_dialogue)
             features = validate_assumption_made(features, clean_dialogue)
-            comment = analysis_result.get("qa_comment", "").strip()
-
             if not features:
                 st.warning("Помилка аналізу")
                 continue
