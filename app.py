@@ -14,7 +14,6 @@ from google_sheets import (
 from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
-from prompts import get_full_analysis_prompt
 from prompts import get_full_analysis_prompt_claude, get_full_analysis_prompt_openai
 import anthropic
 
@@ -34,6 +33,7 @@ DICT_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 KB_SHEET_ID = "1yZbtao1P1Xa0r6ZJAnjkJWikxcWQ90XbXvaT7EWQKeU"
 ANALYSIS_CACHE_VERSION = "2026-04-17-1"
 OPENAI_ANALYSIS_MODEL = st.secrets.get("OPENAI_MODEL", "gpt-5.4-mini")
+CLAUDE_ANALYSIS_MODEL = st.secrets.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
 OPENAI_MAX_OUTPUT_TOKENS = int(st.secrets.get("OPENAI_MAX_OUTPUT_TOKENS", 2200))
 CLAUDE_MAX_OUTPUT_TOKENS = int(st.secrets.get("CLAUDE_MAX_OUTPUT_TOKENS", 2200))
 
@@ -329,7 +329,6 @@ def load_kb_data(sheet):
     except Exception:
         return []
 
-import re
 
 def apply_replacements(text, replacements):
     if not text:
@@ -548,10 +547,6 @@ def build_kb_context(kb_data):
 
 
 # ================= CLEAN =================
-def extract_segments(dialogue):
-    lines = dialogue.split("\n")
-    return "\n".join(lines[:5]), "\n".join(lines[5:-5]), "\n".join(lines[-5:])
-
 def is_autoresponder(dialogue: str) -> bool:
     if not dialogue:
         return False
@@ -1112,57 +1107,71 @@ def comment_mentions_military_service(comment):
     return any(marker in text for marker in military_markers)
 
 
-def get_analysis_output_schema():
-    return """
-Поверни ONLY valid JSON такого формату:
-{
-  "cleaned_transcript": "очищений діалог",
-    "features": {
-    "manager_name_present": boolean,
-    "manager_position_present": boolean,
-    "company_present": boolean,
-      "client_name_used": boolean,
-      "purpose_present": boolean,
-      "friendly_question": boolean,
-      "noise_reaction": "none" | "correct" | "incorrect",
-      "presentation_level": "none" | "partial" | "full",
-      "followup_type": "none" | "offer" | "exact_time",
-      "followup_attempts_count": integer,
-      "client_hung_up_interrupted": boolean,
-      "bonus_offered": boolean,
-      "bonus_has_type": boolean,
-      "bonus_has_duration": boolean,
-      "bonus_has_value": boolean,
-    "has_farewell": boolean,
-    "is_limited_dialogue": boolean,
-    "objection_detected": boolean,
-    "continuation_level": "none" | "formal" | "weak" | "strong" | "forced_end",
-    "continuation_behavior": "active" | "neutral" | "passive" | "forced_end",
-      "client_wants_to_end": boolean,
-      "assumption_made": boolean,
-      "client_sick": boolean,
-      "manager_wished_recovery": boolean,
-      "client_military": boolean,
-      "manager_thanked_for_service": boolean,
-      "client_driving_or_no_phone": boolean,
-      "client_not_actual_client": boolean,
-      "manager_shared_bonus_with_third_party": boolean,
-      "client_unethical_behavior": boolean,
-      "manager_unethical_response": boolean,
-      "comment_match_level": "none" | "partial" | "full",
-      "comment_complete": boolean,
-      "card_has_reason": boolean,
-      "card_has_followup_time": boolean,
-      "speech_quality": "bad" | "good",
-      "forbidden_words_used": boolean,
-      "forbidden_words_detected": ["рядок 1", "рядок 2"],
-    "conversation_logically_completed": boolean,
-    "client_negative": boolean,
-    "client_used_profanity": boolean,
-    "manager_hung_up_before_client_finished": boolean
-  }
-}
-"""
+def is_client_military(dialogue):
+    if not dialogue:
+        return False
+
+    text = str(dialogue).lower()
+
+    military_markers = [
+        "військов",
+        "всу",
+        "зсу",
+        "служ",
+        "на службі",
+        "на службе",
+        "военн",
+        "арм",
+        "мобіліз",
+    ]
+    negative_markers = [
+        "не військов",
+        "не военн",
+        "не служ",
+        "не в зсу",
+        "не у зсу",
+        "не в всу",
+        "не у всу",
+    ]
+
+    if any(marker in text for marker in negative_markers):
+        return False
+
+    return any(marker in text for marker in military_markers)
+
+
+def validate_special_client_states(features, dialogue):
+    manager_lines, client_lines = extract_role_lines(dialogue)
+    client_text = " ".join(client_lines).lower()
+    manager_text = " ".join(manager_lines).lower()
+    all_text = (dialogue or "").lower()
+
+    sick_markers = [
+        "хворію", "хворий", "хвора", "не здужаю", "застудився",
+        "застудилась", "температура", "погано себе почуваю", "нездужаю"
+    ]
+    if any(m in client_text for m in sick_markers):
+        features["client_sick"] = True
+
+    recovery_markers = [
+        "одужуйте", "одужуй", "поправляйтесь", "поправляйся",
+        "хай одужує", "бажаю одужання", "одужання"
+    ]
+    if any(m in manager_text for m in recovery_markers):
+        features["manager_wished_recovery"] = True
+
+    farewell_markers = [
+        "до побачення", "до зустрічі", "всього доброго",
+        "всього найкращого", "бувайте", "бувай", "на все добре",
+        "щасливо", "до зв'язку"
+    ]
+    if any(m in all_text for m in farewell_markers):
+        features["has_farewell"] = True
+
+    if is_client_military(dialogue):
+        features["client_military"] = True
+
+    return features
 
 
 def build_combined_analysis_prompt(prompt_body, raw_dialogue, replacements):
@@ -1174,22 +1183,14 @@ ANALYSIS
 ---------------------
 
 - аналізуй транскрипт як є (він уже очищений локально)
-- поверни тільки `features` і `cleaned_transcript`
-- бонус сам по собі не є презентацією
-- слово "бонус" без реальних умов не робить `bonus_has_type`, `bonus_has_duration`, `bonus_has_value` істинними
-- проста домовленість про передзвін, технічне питання про час передзвону і проста згадка бонусу не є утриманням
-- питання менеджера про можливість короткої розмови ("чи маєте пару хвилин?", "можна 30 секунд?") після сигналу завершення — це спроба утримання (мінімум `weak`)
-- якщо є лише одна спроба утримання, не пиши про кілька спроб
-- "не хочу говорити" / "я зайнятий" / "передзвоніть" = утримання, не заперечення
-- "не хочу продукт / гру / бонус" = заперечення
-- `client_not_actual_client` став тільки якщо прямої комунікації з клієнтом немає
+- поверни тільки `features`
 - додатково визнач:
   "conversation_logically_completed" = true, якщо розмова по суті завершена
   "client_negative" = true, якщо клієнт проявляє негатив
   "client_used_profanity" = true, якщо клієнт використовує нецензурну лексику
   "manager_hung_up_before_client_finished" = true, якщо менеджер не дослухав клієнта і сам завершив незавершену розмову
 
-{get_analysis_output_schema()}
+Поверни ONLY valid JSON згідно зі схемою `ФОРМАТ JSON`, описаною вище.
 
 СИРИЙ ТРАНСКРИПТ:
 {raw_dialogue}
@@ -1205,24 +1206,20 @@ def parse_analysis_response(text):
     features = apply_defaults(payload.get("features", {}))
 
     return {
-        "cleaned_transcript": (payload.get("cleaned_transcript") or "").strip(),
         "features": features,
     }
 
 
 def extract_features_openai(dialogue, comment, kb_context="", replacements=None):
-    intro, middle, ending = extract_segments(dialogue)
-    try:
-        base_prompt = get_full_analysis_prompt_openai(intro, middle, ending, comment, kb_context)
-    except TypeError:
-        base_prompt = get_full_analysis_prompt(intro, middle, ending, comment)
-
+    base_prompt = get_full_analysis_prompt_openai(comment, kb_context)
     prompt = build_combined_analysis_prompt(base_prompt, dialogue, replacements or {})
 
     max_output_tokens = OPENAI_MAX_OUTPUT_TOKENS
     last_error = None
 
     for _attempt in range(2):
+        if _attempt > 0:
+            st.warning(f"Retry attempt {_attempt}: невалідний JSON від моделі. Помилка: {last_error}")
         try:
             res = client.chat.completions.create(
                 model=OPENAI_ANALYSIS_MODEL,
@@ -1247,21 +1244,18 @@ def extract_features_openai(dialogue, comment, kb_context="", replacements=None)
 
 
 def extract_features_claude(dialogue, comment, kb_context="", replacements=None):
-    intro, middle, ending = extract_segments(dialogue)
-    try:
-        base_prompt = get_full_analysis_prompt_claude(intro, middle, ending, comment, kb_context)
-    except TypeError:
-        base_prompt = get_full_analysis_prompt(intro, middle, ending, comment)
-
+    base_prompt = get_full_analysis_prompt_claude(comment, kb_context)
     prompt = build_combined_analysis_prompt(base_prompt, dialogue, replacements or {})
 
     max_output_tokens = CLAUDE_MAX_OUTPUT_TOKENS
     last_error = None
 
     for _attempt in range(2):
+        if _attempt > 0:
+            st.warning(f"Retry attempt {_attempt}: невалідний JSON від моделі. Помилка: {last_error}")
         try:
             response = claude_client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=CLAUDE_ANALYSIS_MODEL,
                 max_tokens=max_output_tokens,
                 messages=[
                     {
@@ -1284,7 +1278,7 @@ def extract_features_claude(dialogue, comment, kb_context="", replacements=None)
     return {}
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=604800, show_spinner=False)
 def analyze_call_cached(ai_provider, url, call_date, dialogue, manager_comment, kb_context, replacements, cache_version):
     if ai_provider == "openai":
         return extract_features_openai(
@@ -1364,17 +1358,14 @@ def score_call(f, meta, dialogue=None):
     s["Встановлення контакту"] = max(0, contact_score)
 
     # ---------------- Спроба презентації ----------------
+    # Бінарна шкала: 0 або 5. partial і full дають однаковий максимум.
     level = f.get("presentation_level", "none")
-
-    if is_driving_or_no_phone:
-        s["Спроба презентації"] = 5
-    elif level in {"full", "partial"}:
-        s["Спроба презентації"] = 5
-    else:
-        s["Спроба презентації"] = 0
-
-    if limited_dialogue:
-        s["Спроба презентації"] = 5
+    presentation_credited = (
+        is_driving_or_no_phone
+        or limited_dialogue
+        or level in {"full", "partial"}
+    )
+    s["Спроба презентації"] = 5 if presentation_credited else 0
 
     # ---------------- Домовленість ----------------
     # Без підтвердженої згоди клієнта на наступний контакт не даємо максимум:
@@ -1838,8 +1829,7 @@ if run_openai or run_claude:
                 st.warning("Помилка аналізу")
                 continue
 
-            clean_dialogue = analysis_result.get("cleaned_transcript") or transcript
-            clean_dialogue = apply_replacements(clean_dialogue, replacements)
+            clean_dialogue = apply_replacements(transcript, replacements)
             features = analysis_result.get("features", {})
             features = normalize_presentation_level(features, clean_dialogue, kb_data)
             features = validate_bonus_features(features, clean_dialogue)
@@ -1849,6 +1839,7 @@ if run_openai or run_claude:
             features = validate_professionalism_features(features, clean_dialogue)
             features = validate_forbidden_words(features, clean_dialogue)
             features = validate_assumption_made(features, clean_dialogue)
+            features = validate_special_client_states(features, clean_dialogue)
             if not features:
                 st.warning("Помилка аналізу")
                 continue
