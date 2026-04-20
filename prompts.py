@@ -1,7 +1,4 @@
-import json
-
-
-def _get_base_analysis_prompt(intro, middle, ending, comment, kb_context=""):
+def _get_base_analysis_prompt(comment, kb_context=""):
     return f"""
 Ти QA-аналітик відділу контролю якості.
 
@@ -50,32 +47,7 @@ def _get_base_analysis_prompt(intro, middle, ending, comment, kb_context=""):
 - якщо в діалозі є сильний фоновий шум, коректна реакція "чи добре мене чути?" теж зараховується як елемент контакту і може замінювати дружнє питання або озвучення мети
 - питання про стан клієнта на шум ("чи зручно говорити?") НЕ вважай коректною реакцією на шум
 - поверни "noise_reaction": "correct", якщо менеджер уточнив чутність; "incorrect", якщо підмінив це питанням про стан; інакше "none"
-- поверни "client_sick": true, якщо клієнт прямо каже, що хворіє
-- поверни "manager_wished_recovery": true, якщо менеджер побажав одужання
-- поверни "client_military": true, якщо у коментарі менеджера є пряма згадка про військову службу клієнта (служить, військовий, ЗСУ, военный тощо)
 - поверни "manager_thanked_for_service": true, якщо менеджер подякував за службу
-
----
-
-2. Спроба презентації
-
-Рівні:
-- "none" — пропозиція відсутня
-- "partial" — є згадка продукту / активності / програми лояльності / де знайти / що інформацію буде надіслано
-- "full" — є назва + пояснення, або назва + де знайти, або назва + що інформацію буде надіслано
-
-ВАЖЛИВО:
-- бонус НЕ є презентацією
-- якщо менеджер говорить тільки про бонус, навіть з умовами, став "presentation_level": "none"
-- згадка продукту, слоту, активності, підбірки, новинки або програми лояльності = мінімум "partial"
-- проста згадка назви або аліаса з бази знань теж = мінімум "partial"
-- пояснення "де знайти" або "інформацію надішлю" рахується як частина презентації
-- якщо є назва + де знайти, це вже "full"
-- "none" став лише коли менеджер взагалі не згадав продукт / активність / програму лояльності
-- якщо клієнт каже, що він за кермом або не може взаємодіяти з телефоном, став "presentation_level": "full"
-
-Поверни у JSON:
-"presentation_level": "none" | "partial" | "full"
 
 ---
 
@@ -121,62 +93,12 @@ def _get_base_analysis_prompt(intro, middle, ending, comment, kb_context=""):
 
 5. Завершення розмови
 Перевір:
-- прощання
-- логічне завершення
-- якщо у завершенні виклику зазначено, що слухавку поклав клієнт, критерій завершення може бути зарахований автоматично навіть без явного прощання
+- логічне завершення розмови (для "conversation_logically_completed")
 
 ---
 
 6. Передзвон
 НЕ аналізується
-
----
-
-7. Не додумувати
-
-Умови перевірки:
-Менеджер не підштовхує клієнта до завершення розмови і не робить висновки за нього.
-
-Помилки:
-- "вам зараз незручно?"
-- "вам незручно?"
-- "я вам не заважаю?"
-- "давайте іншим разом"
-- "ви, мабуть, зайняті"
-- "ви зайняті?"
-- "не дуже вчасно набрав?"
-- будь-які припущення про стан клієнта (спить, на роботі і т.д.)
-- "немає часу так спілкуватися?"
-- "вам, мабуть, нецікаво / незручно / не до розмови?"
-- "чи зручно говорити?"
-
-ВАЖЛИВО:
-- це критерій поведінки менеджера
-- оцінюй assumption_made тільки по репліках менеджера
-- репліки клієнта ніколи самі по собі не є підставою для assumption_made = true
-- не залежить від слів клієнта
-- якщо менеджер сам веде до завершення → це помилка
-- якщо клієнт прямо не сказав про незручність, зайнятість, відсутність часу на розмову, втому або інший стан, а менеджер це припустив у формі питання чи твердження → assumption_made = true
-- питання менеджера теж вважається додумуванням, якщо воно містить уже вкладене припущення про стан клієнта
-- будь-яке питання, яке підштовхує клієнта до думки, що йому незручно говорити, вважай додумуванням
-- питання "чи зручно говорити?", "чи можете говорити?", "я вам не заважаю?" — це додумування, якщо клієнт сам не сказав про незручність
-- підміна технічного питання про чутність питанням про стан клієнта теж є додумуванням
-- якщо додумування сталося на початку розмови, це все одно assumption_made = true незалежно від подальшого діалогу
-- НЕ вважай додумуванням:
-  - якщо клієнт САМ прямо сказав про свій стан (зайнятий, немає часу, не може говорити), а менеджер далі лише уточнює, переформульовує або підсумовує домовленість
-  - якщо менеджер ставить питання про майбутній контакт без припущення про поточний стан клієнта (наприклад: "коли буде зручно?", "коли передзвонити?")
-  - якщо менеджер спирається на вже сказані слова клієнта і не додає нових припущень
-  - якщо фраза менеджера є логічним продовженням або перевіркою вже отриманої інформації
-- Вважай додумуванням ТІЛЬКИ коли:
-  - менеджер сам приписує клієнту стан без підтвердження
-  - або формулює за клієнта причину чи намір, яких не було в діалозі
-- якщо клієнт прямо сказав, що він зайнятий або не може говорити, це має пріоритет над будь-якими інтерпретаціями
-- у такому випадку став assumption_made = false, якщо менеджер не додає нових причин або станів
-
-Поверни у JSON:
-"assumption_made": true/false
-
-true — якщо менеджер приписує клієнту стан або причину без прямого підтвердження
 
 ---
 
@@ -392,58 +314,60 @@ true — якщо менеджер приписує клієнту стан аб
 ФОРМАТ JSON
 ---------------------
 
+Поверни ONLY valid JSON такого формату (усі поля обов'язкові, розміщені всередині ключа "features"):
+
 {{
-  "manager_name_present": boolean,
-  "manager_position_present": boolean,
-  "company_present": boolean,
-  "client_name_used": boolean,
-  "purpose_present": boolean,
-  "friendly_question": boolean,
-  "noise_reaction": "none" | "correct" | "incorrect",
+  "features": {{
+    "manager_name_present": boolean,
+    "manager_position_present": boolean,
+    "company_present": boolean,
+    "client_name_used": boolean,
+    "purpose_present": boolean,
+    "friendly_question": boolean,
+    "noise_reaction": "none" | "correct" | "incorrect",
 
-  "presentation_level": "none" | "partial" | "full",
+    "followup_type": "none" | "offer" | "exact_time",
+    "followup_attempts_count": integer,
+    "client_hung_up_interrupted": boolean,
 
-  "followup_type": "none" | "offer" | "exact_time",
-  "followup_attempts_count": integer,
-  "client_hung_up_interrupted": boolean,
+    "bonus_offered": boolean,
+    "bonus_has_type": boolean,
+    "bonus_has_duration": boolean,
+    "bonus_has_value": boolean,
 
-  "bonus_offered": boolean,
-  "bonus_has_type": boolean,
-  "bonus_has_duration": boolean,
-  "bonus_has_value": boolean,
+    "is_limited_dialogue": boolean,
 
-  "has_farewell": boolean,
-  "is_limited_dialogue": boolean,
+    "objection_detected": boolean,
+    "continuation_level": "none" | "formal" | "weak" | "strong" | "forced_end",
+    "continuation_behavior": "active" | "neutral" | "passive" | "forced_end",
+    "client_wants_to_end": boolean,
 
-  "objection_detected": boolean,
-  "continuation_level": "none" | "formal" | "weak" | "strong" | "forced_end",
-  "continuation_behavior": "active" | "neutral" | "passive" | "forced_end",
-  "client_wants_to_end": boolean,
+    "manager_thanked_for_service": boolean,
+    "client_driving_or_no_phone": boolean,
+    "client_not_actual_client": boolean,
+    "manager_shared_bonus_with_third_party": boolean,
+    "client_unethical_behavior": boolean,
+    "manager_unethical_response": boolean,
 
-  "assumption_made": boolean,
-  "client_sick": boolean,
-  "manager_wished_recovery": boolean,
-  "client_military": boolean,
-  "manager_thanked_for_service": boolean,
-  "client_driving_or_no_phone": boolean,
-  "client_not_actual_client": boolean,
-  "manager_shared_bonus_with_third_party": boolean,
-  "client_unethical_behavior": boolean,
-  "manager_unethical_response": boolean,
+    "comment_match_level": "none" | "partial" | "full",
+    "comment_complete": boolean,
+    "card_has_reason": boolean,
+    "card_has_followup_time": boolean,
 
-  "comment_match_level": "none" | "partial" | "full",
-  "comment_complete": boolean,
-  "card_has_reason": boolean,
-  "card_has_followup_time": boolean,
+    "speech_quality": "bad" | "good",
 
-  "speech_quality": "bad" | "good"
+    "conversation_logically_completed": boolean,
+    "client_negative": boolean,
+    "client_used_profanity": boolean,
+    "manager_hung_up_before_client_finished": boolean
+  }}
 }}
 """
 
 
-def get_full_analysis_prompt_claude(intro, middle, ending, comment, kb_context=""):
+def get_full_analysis_prompt_claude(comment, kb_context=""):
     return (
-        _get_base_analysis_prompt(intro, middle, ending, comment, kb_context)
+        _get_base_analysis_prompt(comment, kb_context)
         + """
 
 ---------------------
@@ -461,9 +385,9 @@ def get_full_analysis_prompt_claude(intro, middle, ending, comment, kb_context="
     )
 
 
-def get_full_analysis_prompt_openai(intro, middle, ending, comment, kb_context=""):
+def get_full_analysis_prompt_openai(comment, kb_context=""):
     return (
-        _get_base_analysis_prompt(intro, middle, ending, comment, kb_context)
+        _get_base_analysis_prompt(comment, kb_context)
         + """
 
 ---------------------
@@ -493,47 +417,3 @@ def get_full_analysis_prompt_openai(intro, middle, ending, comment, kb_context="
     )
 
 
-def get_full_analysis_prompt(intro, middle, ending, comment, kb_context=""):
-    return get_full_analysis_prompt_claude(intro, middle, ending, comment, kb_context)
-
-
-def get_qa_comment_prompt(dialogue, scores):
-    return f"""
-Ти QA-аналітик.
-
-Дай коментар по кожному критерію.
-
-Правила:
-- один критерій = один рядок
-- без води
-- ЗАБОРОНЕНО писати "виконано", "ок", "все добре"
-- якщо критерій виконаний → поясни ЧОМУ (що саме сказав/зробив менеджер)
-- якщо не виконаний → коротко поясни причину
-- використовуй факти з діалогу (конкретні дії або фрази)
-- коментар має пояснювати оцінку, а не повторювати її
-- якщо був бонус → обов'язково вкажи який саме бонус і умови
-- якщо була домовленість про наступний контакт → обов'язково вкажи її у коментарі
-
-Максимальні бали:
-
-{{
-  "Встановлення контакту": 7.5,
-  "Спроба презентації": 5,
-  "Домовленість про наступний контакт": 5,
-  "Пропозиція бонусу": 10,
-  "Завершення розмови": 5,
-  "Передзвон клієнту": 15,
-  "Не додумувати": 5,
-  "Якість мовлення": 2.5,
-  "Професіоналізм": 10,
-  "Оформлення картки": 5,
-  "Утримання клієнта": 20,
-  "Робота із запереченнями": 10
-}}
-
-Оцінки:
-{json.dumps(scores, ensure_ascii=False)}
-
-Діалог:
-{dialogue}
-"""
