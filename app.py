@@ -456,30 +456,74 @@ def normalize_presentation_level(features, dialogue, kb_data):
         "потрібно",
         "треба",
     ]
+    mechanics_markers = [
+        "запустили активність",
+        "запустили нову активність",
+        "щоденн",
+        "щотиж",
+        "щомісяч",
+        "депозит",
+        "поповнен",
+        "накопич",
+        "квитк",
+        "робите",
+        "отримуєте",
+        "отримувати",
+        "за свої",
+        "за депозит",
+        "умови",
+        "доступні рівні",
+    ]
+    intent_only_markers = [
+        "хотіла розповісти про",
+        "хочу розповісти про",
+        "хотів розповісти про",
+        "хочу вас проінформувати",
+        "хотіла вас проінформувати",
+        "хотів вас проінформувати",
+    ]
 
     has_loyalty_mention = has_any_marker(manager_text, loyalty_markers)
     has_location = has_any_marker(manager_text, location_markers)
     has_sent_info = has_any_marker(manager_text, sent_markers)
     has_explanation = has_any_marker(manager_text, explanation_markers)
+    has_mechanics = has_any_marker(manager_text, mechanics_markers)
+    has_amounts = re.search(r"(?<!\w)\d{2,5}(?!\w)", manager_text) is not None
+    has_presentation_explanation = (
+        has_explanation
+        or has_mechanics
+        or (has_amounts and ("депозит" in manager_text or "квитк" in manager_text))
+    )
 
     bonus_only = has_bonus_word and not (has_product_mention or has_loyalty_mention)
     if bonus_only:
         features["presentation_level"] = "none"
         return features
 
-    if has_product_mention or has_loyalty_mention or has_location or has_sent_info:
-        if has_location and (has_product_mention or has_loyalty_mention):
-            features["presentation_level"] = "full"
-        elif level == "none":
-            features["presentation_level"] = "partial"
-        elif level not in {"partial", "full"}:
-            features["presentation_level"] = "partial"
+    has_intent_only = has_any_marker(manager_text, intent_only_markers)
+    has_loyalty_without_details = (
+        has_loyalty_mention
+        and not has_product_mention
+        and not has_location
+        and not has_sent_info
+        and not has_presentation_explanation
+    )
+    if has_intent_only and has_loyalty_without_details:
+        features["presentation_level"] = "none"
+        return features
 
-        if (
-            features["presentation_level"] == "partial"
-            and (has_sent_info and (has_product_mention or has_loyalty_mention or has_explanation))
-        ):
-            features["presentation_level"] = "full"
+    has_concrete_presentation = (
+        has_product_mention
+        or (
+            has_loyalty_mention
+            and (has_location or has_sent_info or has_presentation_explanation)
+        )
+    )
+
+    if has_concrete_presentation:
+        features["presentation_level"] = "full"
+    elif level not in {"none", "partial", "full"}:
+        features["presentation_level"] = "none"
 
     return features
 
@@ -698,15 +742,27 @@ def validate_bonus_features(features, dialogue):
         "кешбек",
         "бездеп",
         "фрібет",
+        "вейдж",
+        "відіграш",
+        "оберт",
+        "крути",
     ]
     offer_markers = [
         "нарахую бонус",
         "нараховано бонус",
+        "бонус нарахував",
+        "бонус нарахувала",
+        "вам бонус нарахував",
+        "вам бонус нарахувала",
         "дам бонус",
         "буде бонус",
         "будуть бонуси",
         "залишу бонус",
         "залишаю бонус",
+        "залишив бонус",
+        "залишила бонус",
+        "лишив бонус",
+        "лишила бонус",
         "бонус залишу",
         "доступний бонус",
         "бонус від менеджера",
@@ -761,38 +817,58 @@ def validate_bonus_features(features, dialogue):
         "ставк",
     ]
 
-    bonus_lines = [
-        line for line in manager_lines_lc
+    bonus_line_indexes = [
+        idx for idx, line in enumerate(manager_lines_lc)
         if has_any_marker(line, bonus_topic_markers)
+    ]
+    expanded_indexes = set()
+    for idx in bonus_line_indexes:
+        expanded_indexes.add(idx)
+        if idx > 0:
+            expanded_indexes.add(idx - 1)
+        if idx + 1 < len(manager_lines_lc):
+            expanded_indexes.add(idx + 1)
+
+    bonus_lines = [
+        line for idx, line in enumerate(manager_lines_lc)
+        if idx in expanded_indexes
     ]
     bonus_text = " ".join(bonus_lines)
 
     if not bonus_text:
-        features["bonus_offered"] = False
-        features["bonus_has_type"] = False
-        features["bonus_has_duration"] = False
-        features["bonus_has_value"] = False
-        return features
-
-    has_offer = has_any_marker(bonus_text, offer_markers)
-    if not has_offer:
-        features["bonus_offered"] = False
-        features["bonus_has_type"] = False
-        features["bonus_has_duration"] = False
-        features["bonus_has_value"] = False
         return features
 
     has_multiplier_value = re.search(r"(?<!\w)\d+\s*[xх](?!\w)", bonus_text) is not None
     has_stake_range = re.search(r"став\w*\s+від\s+\S+\s+до\s+\S+", bonus_text) is not None
-
-    features["bonus_offered"] = True
-    features["bonus_has_type"] = has_any_marker(bonus_text, type_markers)
-    features["bonus_has_duration"] = has_any_marker(bonus_text, duration_markers)
-    features["bonus_has_value"] = (
+    has_offer_regex = (
+        re.search(r"нарах\w*[^.]{0,40}бонус|бонус[^.]{0,40}нарах\w*", bonus_text) is not None
+        or re.search(r"(залиш|лиш)\w*[^.]{0,40}бонус|бонус[^.]{0,40}(залиш|лиш)\w*", bonus_text) is not None
+        or re.search(r"від себе[^.]{0,40}бонус|бонус[^.]{0,40}від менеджера", bonus_text) is not None
+    )
+    detected_type = has_any_marker(bonus_text, type_markers)
+    detected_duration = has_any_marker(bonus_text, duration_markers)
+    detected_value = (
         has_any_marker(bonus_text, value_markers)
         or has_multiplier_value
         or has_stake_range
     )
+    has_offer = (
+        has_any_marker(bonus_text, offer_markers)
+        or has_offer_regex
+        or ("бонус" in bonus_text and (detected_type or detected_duration or detected_value))
+    )
+
+    if not has_offer:
+        if not features.get("bonus_offered"):
+            features["bonus_has_type"] = False
+            features["bonus_has_duration"] = False
+            features["bonus_has_value"] = False
+        return features
+
+    features["bonus_offered"] = True
+    features["bonus_has_type"] = bool(features.get("bonus_has_type")) or detected_type
+    features["bonus_has_duration"] = bool(features.get("bonus_has_duration")) or detected_duration
+    features["bonus_has_value"] = bool(features.get("bonus_has_value")) or detected_value
     return features
 
 
@@ -1292,10 +1368,8 @@ def score_call(f, meta, dialogue=None):
 
     if is_driving_or_no_phone:
         s["Спроба презентації"] = 5
-    elif level == "full":
+    elif level in {"full", "partial"}:
         s["Спроба презентації"] = 5
-    elif level == "partial":
-        s["Спроба презентації"] = 2.5
     else:
         s["Спроба презентації"] = 0
 
@@ -1473,10 +1547,8 @@ def build_readable_qa_comment(features, scores, call):
     presentation_level = features.get("presentation_level", "none")
     if features.get("client_driving_or_no_phone"):
         lines.append("Спроба презентації: клієнт не міг повноцінно взаємодіяти з телефоном, тому критерій зараховано за винятком.")
-    elif presentation_level == "full":
+    elif presentation_level in {"full", "partial"}:
         lines.append("Спроба презентації: менеджер назвав продукт або активність і пояснив суть чи де знайти інформацію, тому презентацію зараховано повністю.")
-    elif presentation_level == "partial":
-        lines.append("Спроба презентації: менеджер згадав продукт, активність або програму лояльності, але без повного розкриття суті.")
     else:
         lines.append("Спроба презентації: презентації продукту не було; інформація лише про бонус не рахується як презентація.")
 
