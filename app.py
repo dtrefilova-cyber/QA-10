@@ -206,24 +206,82 @@ for row in range(5):
             })
 
 # ================= TRANSCRIPTION =================
+def post_process_transcript(text: str) -> str:
+    """Базова локальна нормалізація транскрипту Deepgram до застосування словника DICT.
+    Працює лише з відомими патернами злипань у запереченнях, щоб не зіпсувати правильні слова."""
+    if not text:
+        return text
+
+    text = re.sub(r" {2,}", " ", text)
+
+    negation_fixes = [
+        (r"\bненайд", "не найд"),
+        (r"\bнемож", "не мож"),
+        (r"\bнехоч", "не хоч"),
+        (r"\bнезруч", "не зруч"),
+        (r"\bнепотріб", "не потріб"),
+    ]
+    for pattern, replacement in negation_fixes:
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+    return text
+
+
+def build_keyterms(kb_data, managers_config):
+    """Зібрати список keyterms для Deepgram із трьох джерел:
+    статична проф.лексика, NAME/ALIASES з KB_SHEET, імена менеджерів з MANAGERS.
+    Результат дедуплікується і фільтрується за мінімальною довжиною."""
+    keyterms = set()
+
+    static_terms = [
+        "фріспін", "фриспін", "кешбек", "бездепозитний",
+        "вейджер", "відіграш", "депозит", "нарахування",
+        "бонус від менеджера", "захист ставки", "мінімальний пакет",
+        "програма лояльності", "особистий кабінет",
+    ]
+    keyterms.update(static_terms)
+
+    for row in kb_data or []:
+        name = str(row.get("NAME", "")).strip()
+        aliases = str(row.get("ALIASES", "")).strip()
+        if name:
+            keyterms.add(name)
+        for alias in aliases.split(";"):
+            alias = alias.strip()
+            if alias:
+                keyterms.add(alias)
+
+    for item in managers_config or []:
+        name = str(item.get("manager_name", "")).strip()
+        if name:
+            first_name = name.split()[0]
+            if first_name:
+                keyterms.add(first_name)
+
+    return [t for t in keyterms if t and len(t) >= 3]
+
+
 @st.cache_data(ttl=86400, show_spinner=False)
-def transcribe_audio_cached(url):
+def transcribe_audio_cached(url, keyterms=()):
     if not url:
         return {"ok": False, "error": "empty url", "transcript": None}
 
     try:
+        base_params = {
+            "model": "nova-3",
+            "smart_format": "true",
+            "punctuate": "true",
+            "utterances": "true",
+            "multichannel": "true",
+            "diarize": "true",
+            "language": "uk",
+        }
+        keyterm_params = [("keyterm", t) for t in (keyterms or ())]
+
         r = requests.post(
             "https://api.deepgram.com/v1/listen",
             headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"},
-            params={
-                "model": "nova-3",
-                "smart_format": "true",
-                "punctuate": "true",
-                "utterances": "true",
-                "multichannel": "true",
-                "diarize": "true",
-                "language": "uk"
-            },
+            params=list(base_params.items()) + keyterm_params,
             json={"url": url}
         )
 
@@ -245,7 +303,8 @@ def transcribe_audio_cached(url):
                 text = u.get("transcript", "")
                 if text:
                     dialogue.append(f"{speaker}: {text}")
-            return {"ok": True, "error": "", "transcript": "\n".join(dialogue)}
+            transcript_text = post_process_transcript("\n".join(dialogue))
+            return {"ok": True, "error": "", "transcript": transcript_text}
 
         for ch_index, ch in enumerate(channels):
             alternatives = ch.get("alternatives", [])
@@ -289,14 +348,15 @@ def transcribe_audio_cached(url):
         if current_phrase:
             dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
 
-        return {"ok": True, "error": "", "transcript": "\n".join(dialogue)}
+        transcript_text = post_process_transcript("\n".join(dialogue))
+        return {"ok": True, "error": "", "transcript": transcript_text}
 
     except Exception as e:
         return {"ok": False, "error": f"Transcription exception: {str(e)}", "transcript": None}
 
 
-def transcribe_audio(url):
-    result = transcribe_audio_cached(url)
+def transcribe_audio(url, keyterms=()):
+    result = transcribe_audio_cached(url, keyterms=tuple(keyterms))
     if not result["ok"]:
         st.error(result["error"])
         return None
@@ -767,6 +827,12 @@ def validate_bonus_features(features, dialogue):
         "отримаєте бонус",
         "отримаєш бонус",
         "можу дати бонус",
+        "можна залишу бонус",
+        "дозвольте залишу бонус",
+        "хочу залишити бонус",
+        "щоб бонус вам залишила",
+        "щоб бонус вам залишив",
+        "щоб залишити вам бонус",
     ]
     type_markers = [
         "фс",
@@ -868,8 +934,11 @@ def validate_bonus_features(features, dialogue):
 
 
 def validate_card_features(features):
-    # Якщо домовленості про наступний контакт не було, час передзвону у коментарі не є обов'язковим.
-    if features.get("followup_type", "none") == "none" and features.get("card_has_reason"):
+    # Якщо домовленості про наступний контакт не було або клієнт сам обірвав дзвінок,
+    # час передзвону у коментарі не є обов'язковим елементом.
+    followup_none = features.get("followup_type", "none") == "none"
+    client_hung_up = bool(features.get("client_hung_up_interrupted"))
+    if (followup_none or client_hung_up) and features.get("card_has_reason"):
         features["card_has_followup_time"] = True
     return features
 
@@ -1801,13 +1870,15 @@ if run_openai or run_claude:
     except Exception as e:
         st.error(f"Google connect error: {e}")
 
+    keyterms = tuple(build_keyterms(kb_data, managers_config))
+
     for i, call in enumerate(calls):
         if not call["url"]:
             continue
 
         with st.spinner(f"Аналіз дзвінка {i+1}..."):
 
-            transcript = transcribe_audio(call["url"])
+            transcript = transcribe_audio(call["url"], keyterms=keyterms)
             if not transcript:
                 st.warning("Немає транскрипції")
                 continue
