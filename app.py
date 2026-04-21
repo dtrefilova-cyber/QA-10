@@ -969,6 +969,49 @@ def validate_card_features(features):
     return features
 
 
+def validate_card_reason(features, manager_comment):
+    """Незалежна перевірка коментаря менеджера на наявність причини завершення.
+    Спрацьовує поверх рішення АІ — якщо АІ не розпізнав через помилки транскрипту,
+    маркери виправлять."""
+    if features.get("card_has_reason"):
+        return features
+
+    comment = str(manager_comment or "").lower()
+    if not comment.strip():
+        return features
+
+    reason_markers = [
+        "не мож",
+        "не міг",
+        "не може",
+        "не могла",
+        "не можу",
+        "не зміг",
+        "не змогла",
+        "не можна",
+        "не буду",
+        "зайнят",
+        "скинув",
+        "скинула",
+        "поклав",
+        "поклала",
+        "не до розмови",
+        "не до телефону",
+        "за кермом",
+        "не відповів",
+        "не відповіла",
+        "недоступн",
+        "автовідповідач",
+        "сброс",
+        "сбросил",
+    ]
+
+    if any(marker in comment for marker in reason_markers):
+        features["card_has_reason"] = True
+
+    return features
+
+
 def validate_professionalism_features(features, dialogue):
     manager_lines, client_lines = extract_role_lines(dialogue)
     manager_text = " ".join(manager_lines).lower()
@@ -1932,6 +1975,7 @@ if run_openai or run_claude:
             features = validate_bonus_features(features, clean_dialogue)
             features = validate_dialogue_exceptions(features, clean_dialogue)
             features = validate_objection_and_retention(features, clean_dialogue)
+            features = validate_card_reason(features, call["manager_comment"])
             features = validate_card_features(features)
             features = validate_professionalism_features(features, clean_dialogue)
             features = validate_forbidden_words(features, clean_dialogue)
