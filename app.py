@@ -227,11 +227,25 @@ def post_process_transcript(text: str) -> str:
     return text
 
 
-def build_keyterms(kb_data, managers_config):
-    """Зібрати список keyterms для Deepgram із трьох джерел:
-    статична проф.лексика, NAME/ALIASES з KB_SHEET, імена менеджерів з MANAGERS.
-    Результат дедуплікується і фільтрується за мінімальною довжиною."""
-    keyterms = set()
+def build_keyterms(kb_data, managers_config, max_tokens=480):
+    """Зібрати список keyterms для Deepgram із трьох джерел із жорстким лімітом
+    сумарної кількості токенів (Deepgram обмежує ~500). Пріоритет:
+    1) статична проф.лексика, 2) NAME з KB_SHEET, 3) імена менеджерів,
+    4) аліаси з KB_SHEET (додаються останніми, скільки влізе)."""
+    result = []
+    token_count = 0
+
+    def try_add(term):
+        nonlocal token_count
+        term = (term or "").strip()
+        if not term or len(term) < 3:
+            return
+        tokens = len(term.split())
+        if token_count + tokens > max_tokens:
+            return
+        if term not in result:
+            result.append(term)
+            token_count += tokens
 
     static_terms = [
         "фріспін", "фриспін", "кешбек", "бездепозитний",
@@ -239,26 +253,25 @@ def build_keyterms(kb_data, managers_config):
         "бонус від менеджера", "захист ставки", "мінімальний пакет",
         "програма лояльності", "особистий кабінет",
     ]
-    keyterms.update(static_terms)
+    for t in static_terms:
+        try_add(t)
 
     for row in kb_data or []:
         name = str(row.get("NAME", "")).strip()
-        aliases = str(row.get("ALIASES", "")).strip()
         if name:
-            keyterms.add(name)
-        for alias in aliases.split(";"):
-            alias = alias.strip()
-            if alias:
-                keyterms.add(alias)
+            try_add(name)
 
     for item in managers_config or []:
         name = str(item.get("manager_name", "")).strip()
         if name:
-            first_name = name.split()[0]
-            if first_name:
-                keyterms.add(first_name)
+            try_add(name.split()[0])
 
-    return [t for t in keyterms if t and len(t) >= 3]
+    for row in kb_data or []:
+        aliases = str(row.get("ALIASES", "")).strip()
+        for alias in aliases.split(";"):
+            try_add(alias)
+
+    return tuple(result)
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
