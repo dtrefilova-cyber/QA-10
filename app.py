@@ -47,10 +47,6 @@ st.markdown("""
 
 check_date = st.date_input("Дата перевірки", datetime.today())
 
-if st.button("🗑️ Скинути кеш транскрипцій", type="secondary"):
-    transcribe_audio_cached.clear()
-    st.success("Кеш транскрипцій очищено")
-
 qa_managers_list = [
     "Дар'я", "Надя", "Настя", "Владимира", "Діана", "Руслана", "Олексій", "Катерина"
 ]
@@ -378,6 +374,11 @@ def transcribe_audio_cached(url, keyterms=()):
 
     except Exception as e:
         return {"ok": False, "error": f"Transcription exception: {str(e)}", "transcript": None}
+
+
+if st.button("🗑️ Скинути кеш транскрипцій", type="secondary"):
+    transcribe_audio_cached.clear()
+    st.success("Кеш транскрипцій очищено")
 
 
 def transcribe_audio(url, keyterms=()):
