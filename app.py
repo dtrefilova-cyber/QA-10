@@ -1467,6 +1467,14 @@ def score_call(f, meta, dialogue=None):
     # та не штрафуємо за відсутність утримання.
     limited_dialogue = bool(f.get("is_limited_dialogue"))
 
+    # Особливий сценарій: клієнт сам перервав розмову під час заперечення.
+    # За правилами А/Б: Бонус/Презентація/Домовленість — максимум; Передзвон: 15 тільки якщо був протягом години, інакше 0.
+    objection_interrupted = (
+        meta.get("call_completion_status") == "🟢 (слухавку поклав клієнт)"
+        and bool(f.get("objection_detected"))
+        and not bool(f.get("conversation_logically_completed"))
+    )
+
     # ---------------- Контакт ----------------
     elements = sum([
         f["manager_name_present"],
@@ -1524,10 +1532,18 @@ def score_call(f, meta, dialogue=None):
 
     # ---------------- Бонус ----------------
     # Якщо клієнт поклав слухавку під час етапу з бонусом, критерій бонусу зараховуємо на максимум.
+    bonus_mentioned_in_dialogue = (
+        "бонус" in (dialogue or "").lower()
+        or "фріспін" in (dialogue or "").lower()
+        or "фриспін" in (dialogue or "").lower()
+        or "кешбек" in (dialogue or "").lower()
+        or "фрібет" in (dialogue or "").lower()
+    )
+
     client_hung_up_on_bonus_stage = (
         meta.get("call_completion_status") == "🟢 (слухавку поклав клієнт)"
         and not f.get("conversation_logically_completed")
-        and f.get("bonus_offered")
+        and (f.get("bonus_offered") or bonus_mentioned_in_dialogue)
     )
     if is_driving_or_no_phone:
         s["Пропозиція бонусу"] = 10
@@ -1554,6 +1570,11 @@ def score_call(f, meta, dialogue=None):
 
     if followup_type == "none":
         s["Передзвон клієнту"] = 15
+    elif objection_interrupted:
+        s["Передзвон клієнту"] = (
+            15 if repeat == "так, був протягом години"
+            else 0
+        )
     else:
         s["Передзвон клієнту"] = (
             15 if repeat == "так, був протягом години"
@@ -1644,6 +1665,11 @@ def score_call(f, meta, dialogue=None):
             "Утримання клієнта": 20,
             "Робота із запереченнями": 10,
         }
+
+    if objection_interrupted:
+        s["Спроба презентації"] = 5
+        s["Домовленість про наступний контакт"] = 5
+        s["Пропозиція бонусу"] = 10
 
     return apply_call_completion_rules(s, f, meta)
 
