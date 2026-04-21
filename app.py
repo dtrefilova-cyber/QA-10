@@ -227,20 +227,28 @@ def post_process_transcript(text: str) -> str:
     return text
 
 
-def build_keyterms(kb_data, managers_config, max_tokens=480):
+def build_keyterms(kb_data, managers_config, max_tokens=450):
     """Зібрати список keyterms для Deepgram із трьох джерел із жорстким лімітом
-    сумарної кількості токенів (Deepgram обмежує ~500). Пріоритет:
-    1) статична проф.лексика, 2) NAME з KB_SHEET, 3) імена менеджерів,
+    сумарної кількості токенів (Deepgram обмежує ~500).
+
+    Deepgram використовує BPE-токенізатор: для кирилиці 1 слово ≈ 4-6 BPE-токенів,
+    тому оцінюємо вартість за кількістю символів (консервативно ~2 симв/токен).
+
+    Пріоритет: 1) статична проф.лексика, 2) NAME з KB_SHEET, 3) імена менеджерів,
     4) аліаси з KB_SHEET (додаються останніми, скільки влізе)."""
     result = []
     token_count = 0
+
+    def estimate_tokens(term):
+        # ~2 символи на 1 Deepgram BPE-токен (консервативна оцінка для кирилиці).
+        return max(1, (len(term) + 1) // 2)
 
     def try_add(term):
         nonlocal token_count
         term = (term or "").strip()
         if not term or len(term) < 3:
             return
-        tokens = len(term.split())
+        tokens = estimate_tokens(term)
         if token_count + tokens > max_tokens:
             return
         if term not in result:
