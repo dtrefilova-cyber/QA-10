@@ -540,7 +540,6 @@ def normalize_presentation_level(features, dialogue, kb_data):
         "спини",
         "підбірк",
         "добірк",
-        "активн",
         "новинк",
         "продукт",
         "слот",
@@ -685,6 +684,10 @@ def normalize_presentation_level(features, dialogue, kb_data):
         features["presentation_level"] = "full"
     elif level not in {"none", "partial", "full"}:
         features["presentation_level"] = "none"
+
+    if features.get("presentation_level") in {"full", "partial"}:
+        if has_bonus_word and has_strong_bonus_type and not has_product_mention:
+            features["presentation_level"] = "none"
 
     return features
 
@@ -1218,6 +1221,52 @@ def validate_card_followup_time(features, manager_comment):
     ]
     if any(marker in comment for marker in time_markers):
         features["card_has_followup_time"] = True
+
+    return features
+
+
+def validate_followup_type(features, dialogue):
+    """Знижує followup_type з 'exact_time' до 'offer', якщо у репліках менеджера
+    немає конкретного часу (18:00, о 18, після 17, через 15 хвилин),
+    а є лише розмиті формулювання (ввечері, пізніше, після роботи)."""
+    if features.get("followup_type") != "exact_time":
+        return features
+
+    manager_lines, _ = extract_role_lines(dialogue)
+    manager_text = " ".join(manager_lines).lower()
+    if not manager_text:
+        return features
+
+    exact_time_patterns = [
+        r"\b\d{1,2}[:\.\-]\d{2}\b",
+        r"\bо\s+\d{1,2}\b",
+        r"\bпісля\s+\d{1,2}\b",
+        r"\bдо\s+\d{1,2}\b",
+        r"через\s+\d+\s*(хвилин|годин)",
+        r"через\s+пів\s*години",
+        r"через\s+півгодини",
+    ]
+    has_exact_time = any(re.search(p, manager_text) for p in exact_time_patterns)
+    if has_exact_time:
+        return features
+
+    vague_time_markers = [
+        "ввечері",
+        "увечері",
+        "увечорі",
+        "вранці",
+        "зранку",
+        "вдень",
+        "після роботи",
+        "пізніше",
+        "трошки пізніше",
+        "трохи пізніше",
+        "згодом",
+        "пополудні",
+    ]
+    has_vague_time = any(marker in manager_text for marker in vague_time_markers)
+    if has_vague_time:
+        features["followup_type"] = "offer"
 
     return features
 
@@ -2285,6 +2334,7 @@ if run_openai or run_claude:
             features = validate_card_reason(features, call["manager_comment"])
             features = validate_card_features(features)
             features = validate_card_followup_time(features, call["manager_comment"])
+            features = validate_followup_type(features, clean_dialogue)
             features = validate_professionalism_features(features, clean_dialogue)
             features = validate_forbidden_words(features, clean_dialogue)
             features = validate_friendly_question(features, clean_dialogue)
