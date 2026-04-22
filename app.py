@@ -736,6 +736,7 @@ def apply_defaults(features):
         "manager_hung_up_before_client_finished": False,
 
         "assumption_made": False,
+        "assumption_soft": False,
         "followup_attempts_count": 0,
         "client_hung_up_interrupted": False,
         "client_sick": False,
@@ -807,18 +808,60 @@ def validate_forbidden_words(features, dialogue):
     return features
 
 
+def validate_friendly_question(features, dialogue):
+    """Виключає питання про сайт/продукт як хибні дружні питання.
+
+    Дружнє питання має стосуватись особисто клієнта (справи, настрій, життя),
+    а не сайту, гри чи наявних у клієнта питань по продукту.
+    """
+    if not features.get("friendly_question"):
+        return features
+
+    manager_lines, _ = extract_role_lines(dialogue)
+    manager_text = " ".join(manager_lines).lower()
+    if not manager_text:
+        return features
+
+    real_friendly_patterns = [
+        r"як\s+(?:ваші\s+|твої\s+)?справи(?!\s+(?:на\s+сайт|по\s+сайт|з\s+сайт))",
+        r"як\s+настрій",
+        r"як\s+(?:ваше?\s+)?життя",
+        r"як\s+ви\b(?!\s+там\s+на\s+сайт)",
+        r"як\s+почуває",
+        r"як\s+себе\s+почува",
+        r"як\s+ваш\s+день",
+        r"як\s+вихідн",
+    ]
+
+    has_real_friendly = any(re.search(p, manager_text) for p in real_friendly_patterns)
+
+    if not has_real_friendly:
+        features["friendly_question"] = False
+
+    return features
+
+
 def validate_assumption_made(features, dialogue):
     manager_lines, client_lines = extract_role_lines(dialogue)
     manager_text = " ".join(manager_lines).lower()
     client_text = " ".join(client_lines).lower()
     if not manager_text:
         features["assumption_made"] = False
+        features["assumption_soft"] = False
         return features
 
-    assumption_markers = [
-        "вам зараз незручно",
+    soft_assumption_markers = [
+        "не відволікаю",
+        "не заважаю",
+        "не відриваю",
         "чи зручно говорити",
+        "чи зручно вам говорити",
         "я вам не заважаю",
+        "не дуже вчасно набрав",
+    ]
+
+    hard_assumption_markers = [
+        "вам зараз незручно",
         "давайте іншим разом",
         "ви, мабуть, зайняті",
         "ви мабуть зайняті",
@@ -830,7 +873,6 @@ def validate_assumption_made(features, dialogue):
         "вам мабуть незручно",
         "вам мабуть не до розмови",
         "вам незручно",
-        "не дуже вчасно набрав",
         "ви зайняті",
     ]
 
@@ -843,13 +885,24 @@ def validate_assumption_made(features, dialogue):
         "передзвоніть",
     ]
 
-    if any(marker in manager_text for marker in assumption_markers):
-        if any(marker in client_text for marker in client_state_markers):
-            features["assumption_made"] = False
-        else:
-            features["assumption_made"] = True
+    has_hard = any(marker in manager_text for marker in hard_assumption_markers)
+    has_soft = any(marker in manager_text for marker in soft_assumption_markers)
+
+    # Якщо клієнт уже сигналізував про стан — менеджер реагує, а не додумує
+    client_already_signaled = any(marker in client_text for marker in client_state_markers)
+
+    if client_already_signaled:
+        features["assumption_made"] = False
+        features["assumption_soft"] = False
+    elif has_hard:
+        features["assumption_made"] = True
+        features["assumption_soft"] = False
+    elif has_soft:
+        features["assumption_made"] = True
+        features["assumption_soft"] = True
     else:
         features["assumption_made"] = False
+        features["assumption_soft"] = False
 
     return features
 
@@ -1304,6 +1357,36 @@ def validate_objection_and_retention(features, dialogue):
         if features.get("continuation_level") != "forced_end":
             features["continuation_level"] = "strong"
 
+    # Якщо менеджер одразу після привітання додумав, що клієнту незручно,
+    # і клієнт підтвердив незручність або дзвінок вийшов скороченим через це —
+    # утримання не зараховується (0 балів).
+    if features.get("assumption_made"):
+        client_confirmed_inconvenience_markers = [
+            "відволікає",
+            "відволікаєте",
+            "відриваєте",
+            "заважаєте",
+            "трошки",
+            "немає часу",
+            "нема часу",
+            "зайнят",
+            "не можу говорити",
+            "незручно",
+            "не зручно",
+            "не до розмови",
+            "не до цього",
+            "передзвоніть",
+            "наберіть пізніше",
+        ]
+        client_confirmed = any(m in client_text for m in client_confirmed_inconvenience_markers)
+        call_shortened = (
+            bool(features.get("client_hung_up_interrupted"))
+            or bool(features.get("client_wants_to_end"))
+            or not bool(features.get("conversation_logically_completed"))
+        )
+        if client_confirmed and call_shortened:
+            features["continuation_level"] = "none"
+
     return features
 
 
@@ -1680,7 +1763,7 @@ def score_call(f, meta, dialogue=None):
 
     # ---------------- Не додумувати ----------------
     if f.get("assumption_made"):
-        s["Не додумувати"] = 0
+        s["Не додумувати"] = 2.5 if f.get("assumption_soft") else 0
     else:
         s["Не додумувати"] = 5
 
@@ -1859,7 +1942,10 @@ def build_readable_qa_comment(features, scores, call):
         lines.append("Передзвон клієнту: потрібного передзвону не було, тому критерій не виконано.")
 
     if features.get("assumption_made"):
-        lines.append("Не додумувати: менеджер припускав стан або намір клієнта без прямого підтвердження, тому критерій провалено.")
+        if features.get("assumption_soft"):
+            lines.append("Не додумувати: менеджер м'яко припустив стан клієнта (напр., 'не відволікаю?'), критерій виконано частково.")
+        else:
+            lines.append("Не додумувати: менеджер припускав стан або намір клієнта без прямого підтвердження, тому критерій провалено.")
     else:
         lines.append("Не додумувати: менеджер не додумував зайвого і тримався фактів розмови.")
 
@@ -2104,6 +2190,7 @@ if run_openai or run_claude:
             features = validate_professionalism_features(features, clean_dialogue)
             features = validate_forbidden_words(features, clean_dialogue)
             features = validate_assumption_made(features, clean_dialogue)
+            features = validate_friendly_question(features, clean_dialogue)
             features = validate_special_client_states(features, clean_dialogue)
             if not features:
                 st.warning("Помилка аналізу")
