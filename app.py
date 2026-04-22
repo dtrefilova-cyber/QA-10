@@ -34,6 +34,7 @@ KB_SHEET_ID = "1yZbtao1P1Xa0r6ZJAnjkJWikxcWQ90XbXvaT7EWQKeU"
 ANALYSIS_CACHE_VERSION = "2026-04-17-1"
 OPENAI_ANALYSIS_MODEL = st.secrets.get("OPENAI_MODEL", "gpt-5.4-mini")
 CLAUDE_ANALYSIS_MODEL = st.secrets.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
+OPENAI_TRANSCRIPT_MODEL = st.secrets.get("OPENAI_TRANSCRIPT_MODEL", "gpt-4o-mini")
 OPENAI_MAX_OUTPUT_TOKENS = int(st.secrets.get("OPENAI_MAX_OUTPUT_TOKENS", 2200))
 CLAUDE_MAX_OUTPUT_TOKENS = int(st.secrets.get("CLAUDE_MAX_OUTPUT_TOKENS", 2200))
 
@@ -376,73 +377,53 @@ def transcribe_audio_cached(url, keyterms=()):
         return {"ok": False, "error": f"Transcription exception: {str(e)}", "transcript": None}
 
 
-@st.cache_data(ttl=86400, show_spinner=False)
-def transcribe_audio_elevenlabs_cached(url):
-    if not url:
-        return {"ok": False, "error": "empty url", "transcript": None}
-    try:
-        elevenlabs_key = st.secrets.get("ELEVENLABS_API_KEY")
-        if not elevenlabs_key:
-            return {"ok": False, "error": "ELEVENLABS_API_KEY не знайдено", "transcript": None}
-
-        audio_resp = requests.get(url, timeout=60)
-        if audio_resp.status_code != 200:
-            return {"ok": False, "error": "Не вдалося завантажити аудіо", "transcript": None}
-
-        r = requests.post(
-            "https://api.elevenlabs.io/v1/speech-to-text",
-            headers={"xi-api-key": elevenlabs_key},
-            files={"file": ("audio.mp3", audio_resp.content)},
-            data={
-                "model_id": "scribe_v2",
-                "language_code": "uk",
-                "diarize": "true",
-            }
-        )
-        if r.status_code != 200:
-            return {"ok": False, "error": f"ElevenLabs error: {r.text}", "transcript": None}
-
-        data = r.json()
-        words = data.get("words", [])
-        if not words:
-            return {"ok": False, "error": "Немає транскрипції", "transcript": None}
-
-        dialogue = []
-        current_speaker = None
-        current_phrase = []
-
-        for w in words:
-            if w.get("type") != "word":
-                continue
-            speaker = f"ch_{w.get('speaker_id', 0)}"
-            if speaker != current_speaker:
-                if current_phrase:
-                    dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
-                current_phrase = []
-                current_speaker = speaker
-            current_phrase.append(w.get("text", ""))
-
-        if current_phrase:
-            dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
-
-        return {"ok": True, "error": "", "transcript": "\n".join(dialogue)}
-
-    except Exception as e:
-        return {"ok": False, "error": f"ElevenLabs exception: {str(e)}", "transcript": None}
-
-
-if st.button("🗑️ Скинути кеш транскрипцій", type="secondary"):
-    transcribe_audio_cached.clear()
-    transcribe_audio_elevenlabs_cached.clear()
-    st.success("Кеш транскрипцій очищено")
-
-
 def transcribe_audio(url, keyterms=()):
     result = transcribe_audio_cached(url, keyterms=tuple(keyterms))
     if not result["ok"]:
         st.error(result["error"])
         return None
     return result["transcript"]
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def clean_transcript_cached(raw_transcript, cache_version):
+    if not raw_transcript:
+        return raw_transcript
+    try:
+        res = client.chat.completions.create(
+            model=OPENAI_TRANSCRIPT_MODEL,
+            temperature=0,
+            max_completion_tokens=3000,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Ти — редактор транскриптів телефонних дзвінків. "
+                        "Твоє завдання — виправити транскрипт не змінюючи змісту розмови.\n\n"
+                        "Правила:\n"
+                        "1. Виправ очевидні помилки розпізнавання: злипання слів, спотворені слова, фонетичні заміни\n"
+                        "2. Перейменуй спікерів: ch_0 → Менеджер, ch_1 → Клієнт\n"
+                        "3. Збережи формат діалогу: кожна репліка з нового рядка у форматі 'Спікер: текст'\n"
+                        "4. Не додавай, не прибирай і не перефразовуй репліки — тільки виправляй помилки\n"
+                        "5. Поверни тільки виправлений транскрипт без коментарів"
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": raw_transcript
+                }
+            ]
+        )
+        return res.choices[0].message.content.strip()
+    except Exception as e:
+        st.warning(f"Помилка обробки транскрипту: {e}")
+        return raw_transcript
+
+
+if st.button("🗑️ Скинути кеш транскрипцій", type="secondary"):
+    transcribe_audio_cached.clear()
+    clean_transcript_cached.clear()
+    st.success("Кеш транскрипцій очищено")
 
 
 # ================= DICT =================
@@ -638,6 +619,17 @@ def normalize_presentation_level(features, dialogue, kb_data):
 
     bonus_only = has_bonus_word and not (has_product_mention or has_loyalty_mention)
     if bonus_only:
+        features["presentation_level"] = "none"
+        return features
+
+    value_markers = ["вейдж", "відіграш", "без відіграш", "депозит", "%", "грн"]
+    duration_markers = ["годин", "днів", "48", "24", "термін"]
+    has_bonus_conditions = (
+        has_any_marker(manager_text, value_markers)
+        or has_any_marker(manager_text, duration_markers)
+        or re.search(r"(?<!\w)\d+\s*(грн|%|фс|спін)", manager_text) is not None
+    )
+    if has_bonus_conditions and not has_product_mention:
         features["presentation_level"] = "none"
         return features
 
@@ -1047,6 +1039,16 @@ def validate_card_reason(features, manager_comment):
         "не можна",
         "не буду",
         "зайнят",
+        "занят",
+        "розмовляє",
+        "на роботі",
+        "не зручно",
+        "незручно",
+        "працює",
+        "сервіс",
+        "все ок",
+        "все добре",
+        "задоволен",
         "скинув",
         "скинула",
         "поклав",
@@ -1064,6 +1066,42 @@ def validate_card_reason(features, manager_comment):
 
     if any(marker in comment for marker in reason_markers):
         features["card_has_reason"] = True
+
+    return features
+
+
+def validate_card_followup_time(features, manager_comment):
+    """
+    Незалежна перевірка коментаря на наявність часу наступного контакту.
+    Спрацьовує поверх рішення АІ.
+    """
+    if features.get("card_has_followup_time"):
+        return features
+
+    comment = str(manager_comment or "").lower()
+    if not comment.strip():
+        return features
+
+    if re.search(r"\d{1,2}[:\.\-]\d{2}", comment):
+        features["card_has_followup_time"] = True
+        return features
+
+    time_markers = [
+        "завтра",
+        "після",
+        "перезвон",
+        "передз",
+        "через годину",
+        "через дві",
+        "ввечері",
+        "вранці",
+        "вдень",
+        "пізніше",
+        "наберу",
+        "передзвоню",
+    ]
+    if any(marker in comment for marker in time_markers):
+        features["card_has_followup_time"] = True
 
     return features
 
@@ -1357,7 +1395,9 @@ def validate_special_client_states(features, dialogue):
     farewell_markers = [
         "до побачення", "до зустрічі", "всього доброго",
         "всього найкращого", "бувайте", "бувай", "на все добре",
-        "щасливо", "до зв'язку"
+        "щасливо", "до зв'язку",
+        "на зв'язку", "будемо на зв'язку",
+        "передзвоню", "наберу вас", "наберу пізніше", "передзвоніть",
     ]
     if any(m in all_text for m in farewell_markers):
         features["has_farewell"] = True
@@ -2029,15 +2069,12 @@ if run_openai or run_claude:
 
         with st.spinner(f"Аналіз дзвінка {i+1}..."):
 
-            transcript = transcribe_audio(call["url"], keyterms=keyterms)
-            if not transcript:
+            raw_transcript = transcribe_audio(call["url"], keyterms=keyterms)
+            if not raw_transcript:
                 st.warning("Немає транскрипції")
                 continue
 
-            scribe_result = transcribe_audio_elevenlabs_cached(call["url"])
-            scribe_transcript = scribe_result["transcript"] if scribe_result["ok"] else ""
-            st.write("SCRIBE DEBUG:", scribe_result)
-
+            transcript = clean_transcript_cached(raw_transcript, ANALYSIS_CACHE_VERSION)
             transcript = apply_replacements(transcript, replacements)
 
             analysis_result = analyze_call_cached(
@@ -2063,6 +2100,7 @@ if run_openai or run_claude:
             features = validate_objection_and_retention(features, clean_dialogue)
             features = validate_card_reason(features, call["manager_comment"])
             features = validate_card_features(features)
+            features = validate_card_followup_time(features, call["manager_comment"])
             features = validate_professionalism_features(features, clean_dialogue)
             features = validate_forbidden_words(features, clean_dialogue)
             features = validate_assumption_made(features, clean_dialogue)
@@ -2150,8 +2188,7 @@ if run_openai or run_claude:
                         transcript,
                         clean_dialogue,
                         comment,
-                        total_score,
-                        scribe_transcript=scribe_transcript
+                        total_score
                     )
                     if isinstance(qa_log_res, str):
                         st.error(f"Google error [QA log]: {qa_log_res}")
