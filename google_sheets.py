@@ -226,7 +226,7 @@ def append_manager_log(sheet, call, comment, total_score, ai_label, start_row=20
         return str(e)
 
 
-def append_qa_log(sheet, call, transcript, clean_dialogue, comment, total_score):
+def append_qa_log(sheet, call, transcript, clean_dialogue, comment, total_score, scribe_transcript=""):
     """Додає лог перевірки у QA_LOG_CALLS / Лист 1."""
     try:
         row_index = find_next_row(sheet, start_row=1, key_column=1)
@@ -238,11 +238,12 @@ def append_qa_log(sheet, call, transcript, clean_dialogue, comment, total_score)
             call.get("url", ""),
             transcript,
             clean_dialogue,
+            scribe_transcript,
             comment,
             total_score,
             call.get("call_completion_status", ""),
         ]]
-        sheet.update(f"A{row_index}:J{row_index}", values, value_input_option="RAW")
+        sheet.update(f"A{row_index}:K{row_index}", values, value_input_option="RAW")
         return row_index
     except Exception as e:
         return str(e)
