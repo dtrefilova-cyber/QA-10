@@ -1508,10 +1508,14 @@ def validate_special_client_states(features, dialogue):
 
     farewell_markers = [
         "до побачення", "до зустрічі", "всього доброго",
-        "всього найкращого", "бувайте", "бувай", "на все добре",
+        "всього найкращого", "бажаю найкращого", "найкращого",
+        "бувайте", "бувай", "на все добре",
         "щасливо", "до зв'язку",
         "на зв'язку", "будемо на зв'язку",
         "передзвоню", "наберу вас", "наберу пізніше", "передзвоніть",
+        "гарного дня", "гарного вечора", "гарного тижня", "гарних вихідних",
+        "приємного дня", "приємного вечора",
+        "вдалого дня", "вдалого вечора",
     ]
     if any(m in all_text for m in farewell_markers):
         features["has_farewell"] = True
@@ -2214,13 +2218,13 @@ if run_openai or run_claude:
             features = normalize_presentation_level(features, clean_dialogue, kb_data)
             features = validate_bonus_features(features, clean_dialogue)
             features = validate_dialogue_exceptions(features, clean_dialogue)
+            features = validate_assumption_made(features, clean_dialogue)
             features = validate_objection_and_retention(features, clean_dialogue)
             features = validate_card_reason(features, call["manager_comment"])
             features = validate_card_features(features)
             features = validate_card_followup_time(features, call["manager_comment"])
             features = validate_professionalism_features(features, clean_dialogue)
             features = validate_forbidden_words(features, clean_dialogue)
-            features = validate_assumption_made(features, clean_dialogue)
             features = validate_friendly_question(features, clean_dialogue)
             features = validate_special_client_states(features, clean_dialogue)
             if not features:
