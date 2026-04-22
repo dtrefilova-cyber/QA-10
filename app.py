@@ -633,6 +633,34 @@ def normalize_presentation_level(features, dialogue, kb_data):
         features["presentation_level"] = "none"
         return features
 
+    # Жорсткий скид: якщо менеджер явно говорив про бонуси (тип/назва бонусу),
+    # але відсутня справжня структура презентації сайту/продукту
+    # (локація + механіка/пояснення/лояльність) — це бонус, не презентація.
+    # Це перекриває хибне спрацювання detect_presentation (напр. KB-підрядок "футбол"
+    # у описі спорт-бонусу).
+    strong_bonus_type_markers = [
+        "фс",
+        "fs",
+        "фріспін",
+        "фриспін",
+        "кешбек",
+        "бездеп",
+        "фрібет",
+        "захист ставк",
+        "від себе",
+        "від менеджера",
+        "без вейдж",
+        "без відіграш",
+        "обертів",
+    ]
+    has_strong_bonus_type = has_any_marker(manager_text, strong_bonus_type_markers) or has_bonus_word
+    has_real_presentation_structure = has_location and (
+        has_mechanics or has_presentation_explanation or has_loyalty_mention
+    )
+    if has_strong_bonus_type and not has_real_presentation_structure:
+        features["presentation_level"] = "none"
+        return features
+
     has_intent_only = has_any_marker(manager_text, intent_only_markers)
     has_loyalty_without_details = (
         has_loyalty_mention
@@ -1720,9 +1748,34 @@ def score_call(f, meta, dialogue=None):
     # ---------------- Спроба презентації ----------------
     # Бінарна шкала: 0 або 5. partial і full дають однаковий максимум.
     level = f.get("presentation_level", "none")
+
+    # limited_dialogue автоматично не зараховує презентацію, якщо менеджер явно
+    # говорив про бонус (бонус ≠ презентація). Якщо менеджер у такій розмові
+    # описував бонус — 0 балів, не пільговий максимум.
+    manager_lines_for_score, _ = extract_role_lines(dialogue or "")
+    manager_text_for_score = " ".join(manager_lines_for_score).lower()
+    bonus_content_markers = [
+        "бонус",
+        "фс",
+        "fs",
+        "фріспін",
+        "фриспін",
+        "кешбек",
+        "бездеп",
+        "фрібет",
+        "захист ставк",
+        "від себе",
+        "від менеджера",
+        "без вейдж",
+        "без відіграш",
+        "обертів",
+    ]
+    manager_discussed_bonus = any(m in manager_text_for_score for m in bonus_content_markers)
+    limited_dialogue_credit = limited_dialogue and not manager_discussed_bonus
+
     presentation_credited = (
         is_driving_or_no_phone
-        or limited_dialogue
+        or limited_dialogue_credit
         or level in {"full", "partial"}
     )
     s["Спроба презентації"] = 5 if presentation_credited else 0
