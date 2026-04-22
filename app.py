@@ -376,8 +376,64 @@ def transcribe_audio_cached(url, keyterms=()):
         return {"ok": False, "error": f"Transcription exception: {str(e)}", "transcript": None}
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def transcribe_audio_elevenlabs_cached(url):
+    if not url:
+        return {"ok": False, "error": "empty url", "transcript": None}
+    try:
+        elevenlabs_key = st.secrets.get("ELEVENLABS_API_KEY")
+        if not elevenlabs_key:
+            return {"ok": False, "error": "ELEVENLABS_API_KEY не знайдено", "transcript": None}
+
+        audio_resp = requests.get(url, timeout=60)
+        if audio_resp.status_code != 200:
+            return {"ok": False, "error": "Не вдалося завантажити аудіо", "transcript": None}
+
+        r = requests.post(
+            "https://api.elevenlabs.io/v1/speech-to-text",
+            headers={"xi-api-key": elevenlabs_key},
+            files={"file": ("audio.mp3", audio_resp.content)},
+            data={
+                "model_id": "scribe_v2",
+                "language_code": "uk",
+                "diarize": "true",
+            }
+        )
+        if r.status_code != 200:
+            return {"ok": False, "error": f"ElevenLabs error: {r.text}", "transcript": None}
+
+        data = r.json()
+        words = data.get("words", [])
+        if not words:
+            return {"ok": False, "error": "Немає транскрипції", "transcript": None}
+
+        dialogue = []
+        current_speaker = None
+        current_phrase = []
+
+        for w in words:
+            if w.get("type") != "word":
+                continue
+            speaker = f"ch_{w.get('speaker_id', 0)}"
+            if speaker != current_speaker:
+                if current_phrase:
+                    dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
+                current_phrase = []
+                current_speaker = speaker
+            current_phrase.append(w.get("text", ""))
+
+        if current_phrase:
+            dialogue.append(f"{current_speaker}: {' '.join(current_phrase)}")
+
+        return {"ok": True, "error": "", "transcript": "\n".join(dialogue)}
+
+    except Exception as e:
+        return {"ok": False, "error": f"ElevenLabs exception: {str(e)}", "transcript": None}
+
+
 if st.button("🗑️ Скинути кеш транскрипцій", type="secondary"):
     transcribe_audio_cached.clear()
+    transcribe_audio_elevenlabs_cached.clear()
     st.success("Кеш транскрипцій очищено")
 
 
@@ -1978,6 +2034,9 @@ if run_openai or run_claude:
                 st.warning("Немає транскрипції")
                 continue
 
+            scribe_result = transcribe_audio_elevenlabs_cached(call["url"])
+            scribe_transcript = scribe_result["transcript"] if scribe_result["ok"] else ""
+
             transcript = apply_replacements(transcript, replacements)
 
             analysis_result = analyze_call_cached(
@@ -2090,7 +2149,8 @@ if run_openai or run_claude:
                         transcript,
                         clean_dialogue,
                         comment,
-                        total_score
+                        total_score,
+                        scribe_transcript=scribe_transcript
                     )
                     if isinstance(qa_log_res, str):
                         st.error(f"Google error [QA log]: {qa_log_res}")
