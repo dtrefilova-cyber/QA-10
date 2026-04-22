@@ -686,7 +686,31 @@ def normalize_presentation_level(features, dialogue, kb_data):
         features["presentation_level"] = "none"
 
     if features.get("presentation_level") in {"full", "partial"}:
-        if has_bonus_word and has_strong_bonus_type and not has_product_mention:
+        presentation_action_verbs = [
+            "розкажу про",
+            "розповім про",
+            "хотіла розповісти",
+            "хочу розповісти",
+            "хотів розповісти",
+            "хотіла розказати",
+            "хочу розказати",
+            "хотів розказати",
+            "хотіла представити",
+            "хочу представити",
+            "хотіла презентувати",
+            "хочу презентувати",
+            "презентую",
+            "представлю",
+            "запустили активність",
+            "запустили нову активність",
+            "звертаю вашу увагу на",
+            "звертаю увагу на",
+            "зверніть увагу на",
+            "ознайомлю вас",
+            "проведу екскурсію",
+        ]
+        has_presentation_verb = has_any_marker(manager_text, presentation_action_verbs)
+        if has_bonus_word and has_strong_bonus_type and not has_presentation_verb:
             features["presentation_level"] = "none"
 
     return features
