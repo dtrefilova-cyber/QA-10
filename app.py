@@ -915,6 +915,32 @@ def validate_bonus_features(features, dialogue):
     if not manager_text:
         return features
 
+    # Override: якщо менеджер не вжив жодного явного бонус-індикатора —
+    # ані слова "бонус", ані назви типу бонусу (fs/фріспін/кешбек/бездеп/фрібет/захист ставки),
+    # ані фрази-оферти від себе ("від себе", "від менеджера") — пропозиції бонусу НЕ було.
+    # Описи активностей/акцій сайту (Happy Hours, щасливі години, турніри, програми лояльності)
+    # з "%" / "до депозиту" / "без відіграшу" — це НЕ бонус.
+    explicit_bonus_indicators = [
+        "бонус",
+        "фс",
+        "fs",
+        "фріспін",
+        "фриспін",
+        "кешбек",
+        "бездеп",
+        "фрібет",
+        "захист ставк",
+        "від себе",
+        "від менеджера",
+    ]
+    has_explicit_bonus = has_any_marker(manager_text, explicit_bonus_indicators)
+    if not has_explicit_bonus:
+        features["bonus_offered"] = False
+        features["bonus_has_type"] = False
+        features["bonus_has_duration"] = False
+        features["bonus_has_value"] = False
+        return features
+
     bonus_topic_markers = [
         "бонус",
         "фс",
