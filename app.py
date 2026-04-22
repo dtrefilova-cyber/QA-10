@@ -1358,15 +1358,20 @@ def validate_objection_and_retention(features, dialogue):
             features["continuation_level"] = "strong"
 
     # Якщо менеджер одразу після привітання додумав, що клієнту незручно,
-    # і клієнт підтвердив незручність або дзвінок вийшов скороченим через це —
+    # і клієнт підтвердив незручність, але менеджер не зробив реальної спроби утримати —
     # утримання не зараховується (0 балів).
+    # "Скорочений дзвінок" тут = відсутність реальної спроби утримання після сигналу клієнта,
+    # а не обов'язково обрив. Якщо менеджер просто поїхав у презентацію, ігноруючи сигнал —
+    # це провал утримання.
     if features.get("assumption_made"):
         client_confirmed_inconvenience_markers = [
             "відволікає",
             "відволікаєте",
+            "відволікайте",
             "відриваєте",
             "заважаєте",
-            "трошки",
+            "трошки відволік",
+            "трохи відволік",
             "немає часу",
             "нема часу",
             "зайнят",
@@ -1379,13 +1384,13 @@ def validate_objection_and_retention(features, dialogue):
             "наберіть пізніше",
         ]
         client_confirmed = any(m in client_text for m in client_confirmed_inconvenience_markers)
-        call_shortened = (
-            bool(features.get("client_hung_up_interrupted"))
-            or bool(features.get("client_wants_to_end"))
-            or not bool(features.get("conversation_logically_completed"))
-        )
-        if client_confirmed and call_shortened:
+
+        if client_confirmed and not real_retention:
             features["continuation_level"] = "none"
+            # У score_call, коли client_wants_to_end=False, використовується
+            # continuation_behavior. Примусово встановлюємо "passive", щоб у обох
+            # гілках скорингу "Утримання клієнта" виходив 0.
+            features["continuation_behavior"] = "passive"
 
     return features
 
