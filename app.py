@@ -2036,6 +2036,7 @@ if run_openai or run_claude:
 
             scribe_result = transcribe_audio_elevenlabs_cached(call["url"])
             scribe_transcript = scribe_result["transcript"] if scribe_result["ok"] else ""
+            st.write("SCRIBE DEBUG:", scribe_result)
 
             transcript = apply_replacements(transcript, replacements)
 
