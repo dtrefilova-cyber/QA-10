@@ -31,7 +31,7 @@ claude_client = anthropic.Anthropic(
 LOG_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 DICT_SHEET_ID = "1gElj3hB5CX86YsVQFG2M9DpfvMUMPq2lfuSNj-ylN94"
 KB_SHEET_ID = "1yZbtao1P1Xa0r6ZJAnjkJWikxcWQ90XbXvaT7EWQKeU"
-ANALYSIS_CACHE_VERSION = "2026-04-17-1"
+ANALYSIS_CACHE_VERSION = "2026-04-23-2"
 OPENAI_ANALYSIS_MODEL = st.secrets.get("OPENAI_MODEL", "gpt-5.4-mini")
 CLAUDE_ANALYSIS_MODEL = st.secrets.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
 OPENAI_TRANSCRIPT_MODEL = st.secrets.get("OPENAI_TRANSCRIPT_MODEL", "gpt-4o-mini")
@@ -628,7 +628,7 @@ def normalize_presentation_level(features, dialogue, kb_data):
         or has_any_marker(manager_text, duration_markers)
         or re.search(r"(?<!\w)\d+\s*(грн|%|фс|спін)", manager_text) is not None
     )
-    if has_bonus_conditions and not has_product_mention:
+    if has_bonus_conditions and not has_product_mention and not has_loyalty_mention:
         features["presentation_level"] = "none"
         return features
 
@@ -2235,17 +2235,19 @@ def apply_call_completion_rules(scores, features, meta):
         "так, був протягом години",
         "так, був протягом 2 годин",
     }
+    followup_type = features.get("followup_type", "none")
+    requires_repeat_call = followup_type == "exact_time"
     logical_completion = bool(features.get("conversation_logically_completed"))
     has_farewell = bool(features.get("has_farewell"))
     bonus_offered = bool(features.get("bonus_offered"))
-    has_followup = features.get("followup_type", "none") != "none"
+    has_followup = followup_type != "none"
     client_negative = bool(features.get("client_negative"))
     client_used_profanity = bool(features.get("client_used_profanity"))
     manager_hung_up_early = bool(features.get("manager_hung_up_before_client_finished"))
     interrupted_client_hangup = bool(features.get("client_hung_up_interrupted"))
 
     if logical_completion and has_farewell:
-        if has_followup and not has_any_repeat:
+        if requires_repeat_call and not has_any_repeat:
             scores["Передзвон клієнту"] = 0
         return scores
 
@@ -2254,7 +2256,7 @@ def apply_call_completion_rules(scores, features, meta):
         if interrupted_client_hangup:
             if scores.get("Домовленість про наступний контакт", 0) > 2.5:
                 scores["Домовленість про наступний контакт"] = 2.5
-            if not has_any_repeat:
+            if requires_repeat_call and not has_any_repeat:
                 scores["Передзвон клієнту"] = 0
 
         if (
@@ -2267,7 +2269,7 @@ def apply_call_completion_rules(scores, features, meta):
             return scores
 
         if client_negative and not client_used_profanity:
-            if not immediate_repeat:
+            if requires_repeat_call and not immediate_repeat:
                 scores["Передзвон клієнту"] = 0
             return scores
 
@@ -2294,7 +2296,7 @@ def apply_call_completion_rules(scores, features, meta):
             scores["Передзвон клієнту"] = 0
             return scores
 
-    if has_followup and not has_any_repeat:
+    if requires_repeat_call and not has_any_repeat:
         scores["Передзвон клієнту"] = 0
 
     return scores
