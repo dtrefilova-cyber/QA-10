@@ -656,7 +656,9 @@ def normalize_presentation_level(features, dialogue, kb_data):
     has_real_presentation_structure = has_location and (
         has_mechanics or has_presentation_explanation or has_loyalty_mention
     )
-    if has_strong_bonus_type and not has_real_presentation_structure:
+    # Якщо є згадка програми лояльності (монетки, медалі тощо) — жорсткий скид не застосовується,
+    # бо це самостійний інфопривід незалежно від наявності бонусу.
+    if has_strong_bonus_type and not has_real_presentation_structure and not has_loyalty_mention:
         features["presentation_level"] = "none"
         return features
 
@@ -710,7 +712,7 @@ def normalize_presentation_level(features, dialogue, kb_data):
             "проведу екскурсію",
         ]
         has_presentation_verb = has_any_marker(manager_text, presentation_action_verbs)
-        if has_bonus_word and has_strong_bonus_type and not has_presentation_verb:
+        if has_bonus_word and has_strong_bonus_type and not has_presentation_verb and not has_loyalty_mention:
             features["presentation_level"] = "none"
 
     return features
@@ -1918,6 +1920,9 @@ def score_call(f, meta, dialogue=None):
     repeat = meta["repeat_call"]
 
     if followup_type == "none":
+        s["Передзвон клієнту"] = 15
+    elif followup_type == "offer":
+        # Нечітка домовленість (тільки день без часу) — передзвон зараховується автоматично.
         s["Передзвон клієнту"] = 15
     elif objection_interrupted:
         s["Передзвон клієнту"] = (
