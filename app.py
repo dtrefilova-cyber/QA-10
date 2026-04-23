@@ -1486,6 +1486,9 @@ def validate_objection_and_retention(features, dialogue):
 
     if product_objection:
         features["objection_detected"] = True
+        # Явне заперечення щодо гри ("не хочу грати", "не до гри" тощо)
+        # означає намір завершити тему/розмову для критерію утримання.
+        features["client_wants_to_end"] = True
         if features.get("continuation_level") == "none" and (real_retention or manager_argumented):
             features["continuation_level"] = "weak"
 
@@ -1507,8 +1510,14 @@ def validate_objection_and_retention(features, dialogue):
             features["continuation_level"] = "weak"
 
     if features.get("objection_detected") and features.get("continuation_level") == "none":
-        if features.get("client_hung_up_interrupted") or len(manager_lines) > 0:
+        if features.get("client_hung_up_interrupted") or real_retention or manager_argumented:
             features["continuation_level"] = "weak"
+
+    # Якщо клієнт озвучив заперечення по грі, але менеджер не зробив реальної
+    # спроби втримання/аргументації, утримання має бути 0, а не "нейтрально".
+    if product_objection and not real_retention and not manager_argumented:
+        features["continuation_level"] = "none"
+        features["continuation_behavior"] = "passive"
 
     # Якщо клієнт 2+ рази повторює заперечення і менеджер аргументує,
     # для "Робота із запереченнями" потрібен максимум (через lvl=strong у score_call).
