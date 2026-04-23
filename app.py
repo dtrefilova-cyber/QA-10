@@ -1255,18 +1255,43 @@ def validate_followup_type(features, dialogue):
     """Знижує followup_type з 'exact_time' до 'offer', якщо у репліках менеджера
     немає конкретного часу (18:00, о 18, після 17, через 15 хвилин),
     а є лише розмиті формулювання (ввечері, пізніше, після роботи)."""
-    if features.get("followup_type") != "exact_time":
-        return features
-
     manager_lines, _ = extract_role_lines(dialogue)
     manager_text = " ".join(manager_lines).lower()
     if not manager_text:
+        return features
+
+    _, client_lines = extract_role_lines(dialogue)
+    client_text = " ".join(client_lines).lower()
+
+    manager_has_approx_exact_time = any(
+        re.search(pattern, manager_text)
+        for pattern in [
+            r"\bближче\s+до?\s*\d{1,2}\b",
+            r"\bближче\s+\d{1,2}\b",
+            r"\bпісля\s+\d{1,2}\b",
+            r"\bпісля\s+\d{1,2}\s*год",
+        ]
+    )
+    client_confirmed_followup = has_any_marker(
+        client_text,
+        ["добре", "дякую", "ага", "домовились", "окей", "добре, все"],
+    )
+
+    # "ближче до X", "після X" + підтвердження клієнта = exact_time.
+    if features.get("followup_type") in {"none", "offer"}:
+        if manager_has_approx_exact_time and client_confirmed_followup:
+            features["followup_type"] = "exact_time"
+        return features
+
+    if features.get("followup_type") != "exact_time":
         return features
 
     exact_time_patterns = [
         r"\b\d{1,2}[:\.\-]\d{2}\b",
         r"\bо\s+\d{1,2}\b",
         r"\bпісля\s+\d{1,2}\b",
+        r"\bближче\s+до?\s*\d{1,2}\b",
+        r"\bближче\s+\d{1,2}\b",
         r"\bдо\s+\d{1,2}\b",
         r"через\s+\d+\s*(хвилин|годин)",
         r"через\s+пів\s*години",
@@ -1384,6 +1409,9 @@ def validate_objection_and_retention(features, dialogue):
     ]
     product_objection_markers = [
         "не хочу грати",
+        "не до гри",
+        "не доіг",
+        "не доігр",
         "не цікаво",
         "нецікаво",
         "не хочу бонус",
@@ -1458,7 +1486,7 @@ def validate_objection_and_retention(features, dialogue):
 
     if product_objection:
         features["objection_detected"] = True
-        if features.get("continuation_level") == "none" and (real_retention or len(manager_lines) > 0):
+        if features.get("continuation_level") == "none" and (real_retention or manager_argumented):
             features["continuation_level"] = "weak"
 
     if client_wants_to_end:
