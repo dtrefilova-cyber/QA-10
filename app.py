@@ -17,6 +17,8 @@ from openai import OpenAI
 from prompts import get_full_analysis_prompt_claude, get_full_analysis_prompt_openai
 import anthropic
 
+st.set_page_config(page_title="QA-5", layout="wide")
+
 # ================= CONFIG =================
 DEEPGRAM_API_KEY = st.secrets["DEEPGRAM_API_KEY"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
@@ -41,7 +43,7 @@ CLAUDE_MAX_OUTPUT_TOKENS = int(st.secrets.get("CLAUDE_MAX_OUTPUT_TOKENS", 2200))
 # ================= HEADER =================
 st.markdown("""
 <div class="card">
-    <h2 style="margin:0;">🎧 QA-10</h2>
+    <h2 style="margin:0;">🎧 QA-5</h2>
     <span style="color:#aaa;">Аналіз дзвінків</span>
 </div>
 """, unsafe_allow_html=True)
