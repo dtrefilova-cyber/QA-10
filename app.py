@@ -138,10 +138,12 @@ if not managers_config:
 
 # ================= INPUT =================
 calls = []
-for row in range(5):
-    col1, col2 = st.columns(2)
-    for col, idx in zip([col1, col2], [row * 2 + 1, row * 2 + 2]):
-        with col.expander(f"📞 Дзвінок {idx}"):
+result_slots = []
+input_cols = st.columns(5)
+for col_idx, col in enumerate(input_cols):
+    idx = col_idx + 1
+    with col:
+        with st.expander(f"📞 Дзвінок {idx}", expanded=True):
             audio_url = st.text_input("Посилання", key=f"url_{idx}")
             qa_manager = st.selectbox("QA", qa_managers_list, key=f"qa_{idx}")
             selected_project = st.selectbox(
@@ -176,19 +178,16 @@ for row in range(5):
                 ["правильно нараховано", "помилково нараховано", "не потрібно"],
                 key=f"bonus_{idx}"
             )
-            repeat_col, completion_col = st.columns(2)
-            with repeat_col:
-                repeat_call = st.selectbox(
-                    "Передзвон",
-                    ["так, був протягом години", "так, був протягом 2 годин", "ні, не було"],
-                    key=f"repeat_{idx}"
-                )
-            with completion_col:
-                call_completion_status = st.selectbox(
-                    "Завершення виклику",
-                    call_completion_statuses,
-                    key=f"call_completion_{idx}"
-                )
+            repeat_call = st.selectbox(
+                "Передзвон",
+                ["так, був протягом години", "так, був протягом 2 годин", "ні, не було"],
+                key=f"repeat_{idx}"
+            )
+            call_completion_status = st.selectbox(
+                "Завершення виклику",
+                call_completion_statuses,
+                key=f"call_completion_{idx}"
+            )
             manager_comment = st.text_area("Коментар", key=f"comment_{idx}")
 
             calls.append({
@@ -205,6 +204,7 @@ for row in range(5):
                 "call_completion_status": call_completion_status,
                 "manager_comment": manager_comment,
             })
+        result_slots.append(st.container())
 
 # ================= TRANSCRIPTION =================
 def post_process_transcript(text: str) -> str:
@@ -2512,7 +2512,9 @@ if run_openai or run_claude:
 
 # ================= OUTPUT =================
 for i, res in enumerate(st.session_state["results"]):
-    with st.expander(f"📞 Дзвінок {i+1}", expanded=(i == 0)):
+    if i >= len(result_slots):
+        break
+    with result_slots[i]:
         df = pd.DataFrame(
             list(res["scores"].items()),
             columns=["Критерій", "Оцінка"]
@@ -2524,7 +2526,7 @@ for i, res in enumerate(st.session_state["results"]):
         st.success(f"Загальний бал: {total:.1f}")
 
         st.markdown("### 💬 Коментар QA")
-        for line in res["comment"].split("\n"):     
+        for line in res["comment"].split("\n"):
             st.write(line)
 
 # ================= EXPORT =================
