@@ -190,17 +190,23 @@ def write_to_google_sheet(sheet, meta, scores, start_column=1, start_row=1, crit
             (f"{col_letter}{start_row + 2}", meta.get("qa_manager", "")),
             (f"{col_letter}{start_row + 3}", meta.get("check_date", "")),
         ]
+        last_score_row = criteria_start_row - 1
 
         for key, value in scores.items():
             if key in CRITERIA_ROWS:
                 row = criteria_start_row + (CRITERIA_ROWS[key] - 5)
                 updates.append((f"{col_letter}{row}", format_score_sheet(value)))
+                last_score_row = max(last_score_row, row)
 
         if updates:
             sheet.batch_update(
                 [{"range": cell, "values": [[val]]} for cell, val in updates],
                 value_input_option="RAW",
             )
+            # Записати цифру 1 через один рядок після останньої оцінки
+            marker_row = last_score_row + 2
+            marker_col = column
+            sheet.update_cell(marker_row, marker_col, 1)
 
         return True
     except Exception as e:
@@ -246,6 +252,22 @@ def append_qa_log(sheet, call, transcript, clean_dialogue, comment, total_score)
         return row_index
     except Exception as e:
         return str(e)
+
+
+def append_debug_log(google_client, call_id, debug_data):
+    """Записує debug інфо у таблицю."""
+    try:
+        sheet = google_client.open_by_key("1kRkn3MpH75onRr0JWKaor4i6aGc9zmc5FfgqqO2jfMg").worksheet("Лист1")
+        row_index = find_next_row(sheet, start_row=2, key_column=1)
+        from datetime import datetime
+        values = [[
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            str(call_id),
+            str(debug_data),
+        ]]
+        sheet.update(f"A{row_index}:C{row_index}", values, value_input_option="RAW")
+    except Exception as e:
+        pass  # debug не має зупиняти аналіз
 
 
 def append_log_info(sheet, call):
